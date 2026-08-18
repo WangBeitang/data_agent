@@ -63,7 +63,18 @@ def _finish_action() -> Action:
     return Action(action_id="a9", type=ActionType.finish_analysis, reason="结束分析")
 
 
-def _observation(observation_id: str, status: ObservationStatus, dimension=None) -> Observation:
+def _compare_period_action(action_id="a_cp") -> Action:
+    return Action(
+        action_id=action_id,
+        type=ActionType.compare_period,
+        metrics=[MetricKey.sales_amount],
+        current_period=FEB,
+        comparison_period=JAN,
+        reason="总体比较",
+    )
+
+
+def _observation(observation_id: str, status: ObservationStatus, dimension=None, action_id="a1") -> Observation:
     if status == ObservationStatus.success:
         result = QueryExecutionResult(
             query="q",
@@ -108,7 +119,7 @@ def _observation(observation_id: str, status: ObservationStatus, dimension=None)
 
     return Observation(
         observation_id=observation_id,
-        action_id="a1",
+        action_id=action_id,
         sub_query="s",
         query_result=result,
         dimension=dimension,
@@ -315,6 +326,90 @@ def test_state_helpers_for_finish_conditions():
     assert successful_breakdown_dimensions(observations) == {DimensionKey.region, DimensionKey.category}
     assert has_driver_evidence([_evidence("e1", ["o2"], direction="driver")]) is True
     assert has_driver_evidence([_evidence("e2", ["o2"])]) is False
+
+
+# ==================== finish 总体比较证据链（Stage 4 验收小修） ====================
+
+def test_finish_rejected_when_overall_observation_has_no_evidence():
+    """成功 compare_period Observation 但没有任何 Evidence 引用它 → finish 拒绝。"""
+    router = ActionRouter()
+    compare_action = _compare_period_action("a_cp")
+    observations = [
+        _observation("o_cp", ObservationStatus.success, dimension=None, action_id="a_cp"),
+        _observation("o_r", ObservationStatus.success, dimension=DimensionKey.region, action_id="a_r"),
+        _observation("o_c", ObservationStatus.success, dimension=DimensionKey.category, action_id="a_c"),
+    ]
+    evidences = [
+        _evidence("e_r", ["o_r"], direction="driver"),
+        _evidence("e_c", ["o_c"]),
+    ]
+    result = router.validate(
+        _finish_action(),
+        seen_actions=[compare_action],
+        query_action_count=3,
+        observations=observations,
+        calculations=[],
+        evidences=evidences,
+    )
+    assert result.ok is False
+    assert result.error_code == "PREMATURE_FINISH"
+
+
+def test_finish_rejected_when_only_unit_price_overall():
+    """只有 analyze_unit_price Observation（dimension=None）→ 不得视为总体比较。"""
+    router = ActionRouter()
+    unit_action = Action(
+        action_id="a_up",
+        type=ActionType.analyze_unit_price,
+        metrics=[MetricKey.sales_amount, MetricKey.sales_quantity],
+        current_period=FEB,
+        comparison_period=JAN,
+        reason="量额分析",
+    )
+    observations = [
+        _observation("o_up", ObservationStatus.success, dimension=None, action_id="a_up"),
+        _observation("o_r", ObservationStatus.success, dimension=DimensionKey.region, action_id="a_r"),
+        _observation("o_c", ObservationStatus.success, dimension=DimensionKey.category, action_id="a_c"),
+    ]
+    evidences = [
+        _evidence("e_up", ["o_up"]),
+        _evidence("e_r", ["o_r"], direction="driver"),
+    ]
+    result = router.validate(
+        _finish_action(),
+        seen_actions=[unit_action],
+        query_action_count=3,
+        observations=observations,
+        calculations=[],
+        evidences=evidences,
+    )
+    assert result.ok is False
+    assert result.error_code == "PREMATURE_FINISH"
+
+
+def test_finish_accepted_with_overall_comparison_evidence():
+    """compare_period Action + success Observation + Evidence 引用该 Observation
+    + 两个不同维度 breakdown + driver Evidence → finish 接受。"""
+    router = ActionRouter()
+    compare_action = _compare_period_action("a_cp")
+    observations = [
+        _observation("o_cp", ObservationStatus.success, dimension=None, action_id="a_cp"),
+        _observation("o_r", ObservationStatus.success, dimension=DimensionKey.region, action_id="a_r"),
+        _observation("o_c", ObservationStatus.success, dimension=DimensionKey.category, action_id="a_c"),
+    ]
+    evidences = [
+        _evidence("e_cp", ["o_cp"]),
+        _evidence("e_r", ["o_r"], direction="driver"),
+    ]
+    result = router.validate(
+        _finish_action(),
+        seen_actions=[compare_action],
+        query_action_count=3,
+        observations=observations,
+        calculations=[],
+        evidences=evidences,
+    )
+    assert result.ok is True
 
 
 # ==================== 重复 Action 不增加计数 ====================

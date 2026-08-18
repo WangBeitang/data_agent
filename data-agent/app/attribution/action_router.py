@@ -182,11 +182,53 @@ def forced_status(has_valid_evidence: bool) -> AnalysisStatus:
 
 
 def has_successful_overall_comparison(observations: Sequence[Observation]) -> bool:
-    """是否存在成功总体比较 Observation（dimension=null 且 success）。"""
+    """是否存在成功总体比较 Observation（dimension=null 且 success）。
+
+    注意：dimension=None 只能说明是"总体行"，不能区分 compare_period 与
+    analyze_unit_price；正常 finish 的总体比较判定必须使用
+    has_overall_comparison_evidence()（需要 compare_period Action +
+    success Observation + Evidence 引用）。
+    """
     return any(
         obs.status == ObservationStatus.success and obs.dimension is None
         for obs in observations
     )
+
+
+def has_overall_comparison_evidence(
+    actions: Sequence[Action],
+    observations: Sequence[Observation],
+    evidences: Sequence[Evidence],
+) -> bool:
+    """是否已形成总体指标比较证据链（数据对象设计 §13.2 条件 1）。
+
+    确定性确认：
+
+    ```text
+    compare_period Action → 对应 success Observation → 至少一条 Evidence 引用该 Observation
+    ```
+
+    - 只认 ActionType.compare_period 的 Action；analyze_unit_price 等
+      dimension=None 的 Observation 不得视为总体比较；
+    - 通过现有 action_id / observation_id / evidence.observation_ids
+      关联判断，不增加新数据对象、不增加新字段、不猜测。
+    """
+    compare_action_ids = {
+        action.action_id for action in actions if action.type == ActionType.compare_period
+    }
+    if not compare_action_ids:
+        return False
+    success_obs_ids = {
+        obs.observation_id
+        for obs in observations
+        if obs.action_id in compare_action_ids and obs.status == ObservationStatus.success
+    }
+    if not success_obs_ids:
+        return False
+    referenced_obs_ids = {
+        obs_id for evidence in evidences for obs_id in evidence.observation_ids
+    }
+    return bool(success_obs_ids & referenced_obs_ids)
 
 
 def successful_breakdown_dimensions(observations: Sequence[Observation]) -> set[DimensionKey]:
@@ -237,13 +279,18 @@ def can_finish(
 
 
 def finish_conditions_met(
+    actions: Sequence[Action],
     observations: Sequence[Observation],
     evidences: Sequence[Evidence],
     forced_stopped: bool,
 ) -> bool:
-    """基于当前状态便捷判定正常 finish 条件是否满足。"""
+    """基于当前状态便捷判定正常 finish 条件是否满足。
+
+    总体比较条件必须满足完整证据链：
+    compare_period Action → success Observation → Evidence 引用该 Observation。
+    """
     return can_finish(
-        has_overall_comparison=has_successful_overall_comparison(observations),
+        has_overall_comparison=has_overall_comparison_evidence(actions, observations, evidences),
         breakdown_dimensions=successful_breakdown_dimensions(observations),
         has_driver_evidence=has_driver_evidence(evidences),
         forced_stopped=forced_stopped,
@@ -409,11 +456,12 @@ class ActionRouter:
             forced_stopped = is_force_stopped(
                 query_action_count, consecutive_empty_or_failed, max_query_actions
             )
-            # finish 判定基于当前状态；正常 finish 要求非强制停止
-            if not finish_conditions_met(observations, evidences, forced_stopped=forced_stopped):
+            # finish 判定基于当前状态；正常 finish 要求非强制停止，
+            # 且总体比较必须满足 compare_period Action → success Observation → Evidence 链
+            if not finish_conditions_met(seen_actions, observations, evidences, forced_stopped=forced_stopped):
                 return ActionValidation.reject(
                     "PREMATURE_FINISH",
-                    "正常 finish 最低条件未满足（需要成功总体比较、至少两个维度拆解、存在 driver 证据，且未触发强制停止）",
+                    "正常 finish 最低条件未满足（需要 compare_period 总体比较 Evidence、至少两个维度拆解、存在 driver 证据，且未触发强制停止）",
                 )
             return ActionValidation.accept()
 

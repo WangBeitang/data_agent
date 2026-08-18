@@ -96,7 +96,11 @@ def _breakdown_observation(
     )
 
 
-def _success_observation(observation_id: str, dimension: DimensionKey | None = None) -> Observation:
+def _success_observation(
+    observation_id: str,
+    dimension: DimensionKey | None = None,
+    action_id: str = "a1",
+) -> Observation:
     rows = [{"period_key": "comparison", "sales_amount": 1.0}, {"period_key": "current", "sales_amount": 2.0}]
     if dimension is not None:
         for row in rows:
@@ -104,7 +108,7 @@ def _success_observation(observation_id: str, dimension: DimensionKey | None = N
     table = QueryTable(columns=list(rows[0].keys()), rows=rows, row_count=len(rows))
     return Observation(
         observation_id=observation_id,
-        action_id="a1",
+        action_id=action_id,
         sub_query="s",
         query_result=QueryExecutionResult(
             query="q", sql="SELECT ...", table=table,
@@ -462,20 +466,25 @@ def test_finish_rejected_without_driver_evidence():
 def test_finish_accepted_when_conditions_met():
     router = ActionRouter()
     finish = _action(type=ActionType.finish_analysis)
+    compare_action = _action(action_id="a1", type=ActionType.compare_period)
     observations = [
-        _success_observation("o1", dimension=None),
-        _success_observation("o2", dimension=DimensionKey.region),
-        _success_observation("o3", dimension=DimensionKey.category),
+        _success_observation("o1", dimension=None, action_id="a1"),  # compare_period 结果
+        _success_observation("o2", dimension=DimensionKey.region, action_id="a2"),
+        _success_observation("o3", dimension=DimensionKey.category, action_id="a3"),
     ]
     evidences = [
         Evidence(
-            evidence_id="e1", action_id="a1", observation_ids=["o2"],
+            evidence_id="e0", action_id="a1", observation_ids=["o1"],
+            title="总体比较", statement="s", metric=MetricKey.sales_amount,
+        ),
+        Evidence(
+            evidence_id="e1", action_id="a2", observation_ids=["o2"],
             title="t", statement="s", metric=MetricKey.sales_amount,
             dimension=DimensionKey.region, member="成员A", direction="driver",
-        )
+        ),
     ]
     result = router.validate(
-        finish, seen_actions=[], query_action_count=1,
+        finish, seen_actions=[compare_action], query_action_count=1,
         observations=observations, calculations=[], evidences=evidences,
     )
     assert result.ok is True
