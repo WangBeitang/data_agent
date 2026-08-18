@@ -17,6 +17,10 @@ from app.repositories.qdrant.metric_qdrant_repository import MetricQdrantReposit
 _SAFE_QUERY_FAILED_MESSAGE = "问数执行失败：无法完成 SQL 生成、校验或执行，请调整问题后重试。"
 _SAFE_SSE_ERROR_MESSAGE = "查询过程中出现异常，请调整问题后重试。"
 
+# legacy SSE 允许对外暴露的事件键（stage / stage_code / result）
+# 内部结构化事件（如 execute_sql 的 query_result）不得进入外部 SSE
+_LEGACY_SSE_ALLOWED_KEYS = {"stage", "stage_code", "result"}
+
 
 class QueryService:
     def __init__(self,
@@ -107,9 +111,14 @@ class QueryService:
         """兼容层：以当前 SSE 字符串格式输出流式事件，供现有 router 与前端使用。
 
         Stage 2 保留本方法；仅做 SSE 字符串格式适配，不复制 Graph 业务逻辑。
+        只透传 legacy 契约允许的事件（stage/stage_code/result），
+        内部结构化事件（query_result）不得泄露到外部 SSE。
         """
         try:
             async for chunk in self.stream(query):
+                # 白名单过滤：包含非 legacy 键（如 query_result）的事件跳过
+                if not set(chunk.keys()).issubset(_LEGACY_SSE_ALLOWED_KEYS):
+                    continue
                 yield f"data: {json.dumps(chunk, ensure_ascii=False, default=str)} \n\n"
         except Exception as e:
             logger.error(f"问数流式执行失败 query={query!r}", exc_info=True)

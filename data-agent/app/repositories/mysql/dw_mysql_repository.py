@@ -1,5 +1,22 @@
+from decimal import Decimal
+
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
+
+
+def _to_json_scalar(value):
+    """将数据库返回值归一化为 JsonScalar（str | int | float | bool | null）。
+
+    - Decimal（MySQL SUM 等返回类型）转为 float；
+    - date/datetime 等其它类型转为字符串，保证结果可 JSON 序列化。
+
+    归一化发生在 repository 读取边界，QueryTable 不再做值类型转换。
+    """
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, Decimal):
+        return float(value)
+    return str(value)
 
 
 class DWMysqlRepository:
@@ -44,11 +61,15 @@ class DWMysqlRepository:
         """结构化执行一条查询SQL，返回 (columns, rows)。
 
         - columns：使用 result.keys() 取得，SQL 返回 0 行时仍能取得列名；
-        - rows：使用 result.mappings().all() 取得并转换为 dict 列表。
+        - rows：使用 result.mappings().all() 取得，并在本边界将数据库值
+          归一化为 JsonScalar（Decimal→float、date→str），保证可 JSON 序列化。
         """
         result = await self.session.execute(text(sql))
         columns = list(result.keys())
-        rows = [dict(row) for row in result.mappings().all()]
+        rows = [
+            {key: _to_json_scalar(value) for key, value in dict(row).items()}
+            for row in result.mappings().all()
+        ]
         return columns, rows
 
     """

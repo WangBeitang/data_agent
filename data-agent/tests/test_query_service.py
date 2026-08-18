@@ -161,6 +161,29 @@ def test_search_returns_sse_format_and_keeps_legacy_result():
     assert json.loads(events[1][6:])["result"] == [{"销售额": 109030.5}]
 
 
+def test_search_filters_internal_query_result_chunk():
+    """legacy SSE 不得泄露内部 query_result 事件，只透传 stage/stage_code/result。"""
+    async def fake_astream(**kwargs):
+        yield {"stage": "执行SQL", "stage_code": "sql_execution"}
+        yield {"result": [{"销售额": 109030.5}]}
+        yield {"query_result": {"sql": "SELECT ...", "columns": ["销售额"], "rows": [{"销售额": 109030.5}]}}
+
+    service = _make_service()
+    with patch("app.services.query_service.graph") as g:
+        g.astream = fake_astream
+
+        async def _collect():
+            return [e async for e in service.search("统计2025年各月销售额")]
+
+        events = asyncio.run(_collect())
+
+    assert len(events) == 2  # query_result 被过滤
+    joined = "".join(events)
+    assert "query_result" not in joined
+    assert "stage_code" in joined
+    assert '"result"' in joined
+
+
 def test_search_hides_raw_exception():
     async def fake_astream(**kwargs):
         raise RuntimeError("secret db password leaked")
