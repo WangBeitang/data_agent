@@ -1,0 +1,50 @@
+# 日志配置
+logging:
+  file:
+    enable: true
+    level: INFO
+    path: logs
+    rotation: "1 KB"
+    retention: "7 days"
+  console:
+    enable: true
+    level: INFO
+
+# 数据库meta的配置
+db_meta:
+  host: 49.235.159.92
+  port: 3308
+  user: data_agent_app
+  password: Rf11YI5So+aCeG3J7hKOQNxIlJHtf+IB
+  database: meta2
+
+# 数据库dw的配置
+db_dw:
+  host: 49.235.159.92
+  port: 3308
+  user: data_agent_app
+  password: Rf11YI5So+aCeG3J7hKOQNxIlJHtf+IB
+  database: dw2
+
+# qdrant的配置
+qdrant:
+  host: 49.235.159.92
+  port: 6333
+  embedding_size: 1024
+
+# embedding的配置
+embedding:
+  model_path: models/bge-large-zh-v1.5
+  device: cpu
+  normalize_embeddings: true
+
+# es的配置
+es:
+  host: 49.235.159.92
+  port: 9200
+  index_name: data_agent
+
+# llm的配置
+llm:
+  model_name: deepseek-v4-flash
+  api_key: sk-8864e638934b4f26b724ecb96ce42fd0

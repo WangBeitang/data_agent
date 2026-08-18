@@ -1,0 +1,123 @@
+<component name="InspectionProjectProfileManager">
+  <profile version="1.0">
+    <option name="myName" value="Project Default" />
+    <inspection_tool class="Eslint" enabled="true" level="WARNING" enabled_by_default="true" />
+    <inspection_tool class="PyPackageRequirementsInspection" enabled="true" level="WARNING" enabled_by_default="true">
+      <option name="ignoredPackages">
+        <list>
+          <option value="absl-py" />
+          <option value="accelerate" />
+          <option value="aiohappyeyeballs" />
+          <option value="aiohttp" />
+          <option value="aiosignal" />
+          <option value="annotated-doc" />
+          <option value="annotated-types" />
+          <option value="anyio" />
+          <option value="attrs" />
+          <option value="bitsandbytes" />
+          <option value="certifi" />
+          <option value="charset-normalizer" />
+          <option value="click" />
+          <option value="colorama" />
+          <option value="cut-cross-entropy" />
+          <option value="datasets" />
+          <option value="diffusers" />
+          <option value="dill" />
+          <option value="distro" />
+          <option value="docstring-parser" />
+          <option value="fastapi" />
+          <option value="filelock" />
+          <option value="frozenlist" />
+          <option value="fsspec" />
+          <option value="grpcio" />
+          <option value="h11" />
+          <option value="hf-transfer" />
+          <option value="hf-xet" />
+          <option value="httpcore" />
+          <option value="httpx" />
+          <option value="huggingface-hub" />
+          <option value="idna" />
+          <option value="importlib-metadata" />
+          <option value="jinja2" />
+          <option value="jiter" />
+          <option value="markdown" />
+          <option value="markdown-it-py" />
+          <option value="markupsafe" />
+          <option value="mdurl" />
+          <option value="modelscope" />
+          <option value="mpmath" />
+          <option value="msgspec" />
+          <option value="multidict" />
+          <option value="multiprocess" />
+          <option value="networkx" />
+          <option value="numpy" />
+          <option value="openai" />
+          <option value="packaging" />
+          <option value="pandas" />
+          <option value="peft" />
+          <option value="pillow" />
+          <option value="propcache" />
+          <option value="protobuf" />
+          <option value="psutil" />
+          <option value="pyarrow" />
+          <option value="pydantic" />
+          <option value="pydantic-core" />
+          <option value="pygments" />
+          <option value="python-dateutil" />
+          <option value="pyyaml" />
+          <option value="regex" />
+          <option value="requests" />
+          <option value="rich" />
+          <option value="safetensors" />
+          <option value="sentencepiece" />
+          <option value="setuptools" />
+          <option value="shellingham" />
+          <option value="six" />
+          <option value="sniffio" />
+          <option value="starlette" />
+          <option value="sympy" />
+          <option value="tensorboard" />
+          <option value="tensorboard-data-server" />
+          <option value="tiktoken" />
+          <option value="tokenizers" />
+          <option value="torch" />
+          <option value="tqdm" />
+          <option value="transformers" />
+          <option value="trl" />
+          <option value="typeguard" />
+          <option value="typer" />
+          <option value="typer-slim" />
+          <option value="typing-extensions" />
+          <option value="typing-inspection" />
+          <option value="tyro" />
+          <option value="tzdata" />
+          <option value="unsloth" />
+          <option value="unsloth-zoo" />
+          <option value="urllib3" />
+          <option value="uvicorn" />
+          <option value="werkzeug" />
+          <option value="wheel" />
+          <option value="xformers" />
+          <option value="xxhash" />
+          <option value="yarl" />
+          <option value="zipp" />
+        </list>
+      </option>
+    </inspection_tool>
+    <inspection_tool class="PyPep8Inspection" enabled="true" level="INFORMATION" enabled_by_default="true">
+      <option name="ignoredErrors">
+        <list>
+          <option value="E302" />
+        </list>
+      </option>
+    </inspection_tool>
+    <inspection_tool class="PyPep8NamingInspection" enabled="true" level="WEAK WARNING" enabled_by_default="true">
+      <option name="ignoredErrors">
+        <list>
+          <option value="N801" />
+        </list>
+      </option>
+    </inspection_tool>
+    <inspection_tool class="PyUnusedImportsInspection" enabled="false" level="WARNING" enabled_by_default="false" />
+  </profile>
+</component>
