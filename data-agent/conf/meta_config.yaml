@@ -1,39 +1,40 @@
 # 需要同步到meta数据库的表信息及表的字段信息
 # 表信息 =》保存到table_info表
 # 字段信息 =》保存到column_info表
+# 业务口径：制造业销售经营分析；dw2 为销售订单星型模型（销售订单事实表 + 产品/客户/区域/日期维度）
 tables:
   - name: dim_region
     role: dim
-    description: 地区维度表，用于描述订单发生的地理区域信息。
+    description: 销售区域维度表，用于描述销售订单发生的地理区域信息。
     columns:
       - name: region_id
         role: primary_key
-        description: 地区唯一标识。
-        alias: [ 地区ID, 区域ID ]
+        description: 销售区域唯一标识。
+        alias: [ 区域ID, 地区ID ]
         sync: false
 
       - name: province
         role: dimension
-        description: 订单所属的省份名称。
+        description: 销售订单所属的省份名称。
         alias: [ 省份, 省, 所在省份 ]
         sync: true
 
       - name: region_name
         role: dimension
-        description: 订单所属的大区名称，如华东、华南等。
-        alias: [ 地区, 区域, 大区 ]
+        description: 销售订单所属的销售区域名称，如华东、华南等。
+        alias: [ 销售区域, 区域, 大区, 地区 ]
         sync: true
 
       - name: country
         role: dimension
-        description: 地区所属国家名称。
+        description: 销售区域所属国家名称。
         alias: [ 国家, 国家名称 ]
         sync: true
 
 
   - name: dim_customer
     role: dim
-    description: 客户维度表，描述下单客户的基本属性。
+    description: 终端客户维度表，描述下单客户的基本属性。
     columns:
       - name: customer_id
         role: primary_key
@@ -55,43 +56,43 @@ tables:
 
       - name: member_level
         role: dimension
-        description: 客户会员等级。
-        alias: [ 会员等级, 用户等级 ]
+        description: 客户等级，如黄金、白银等。
+        alias: [ 客户等级, 会员等级, 用户等级 ]
         sync: true
 
 
   - name: dim_product
     role: dim
-    description: 商品维度表，描述商品的基本属性信息。
+    description: 产品维度表，描述产品或 SKU 的基本属性信息。
     columns:
       - name: product_id
         role: primary_key
-        description: 商品唯一标识。
-        alias: [ 商品ID, 产品ID ]
+        description: 产品唯一标识。
+        alias: [ 产品ID, 商品ID ]
         sync: false
 
       - name: product_name
         role: dimension
-        description: 商品名称。
-        alias: [ 商品名称, 产品名称 ]
+        description: 产品名称。
+        alias: [ 产品名称, 产品, 商品名称 ]
         sync: true
 
       - name: category
         role: dimension
-        description: 商品所属品类。
-        alias: [ 商品类别, 品类, 分类 ]
+        description: 产品所属的产品类别。
+        alias: [ 产品类别, 类别, 品类, 分类 ]
         sync: true
 
       - name: brand
         role: dimension
-        description: 商品品牌名称。
+        description: 产品品牌名称。
         alias: [ 品牌, 品牌名称 ]
         sync: true
 
 
   - name: dim_date
     role: dim
-    description: 时间维度表，用于多时间粒度分析。
+    description: 经营日期维度表，用于多时间粒度分析。
     columns:
       - name: date_id
         role: primary_key
@@ -125,11 +126,11 @@ tables:
 
   - name: fact_order
     role: fact
-    description: 订单事实表，记录订单数量和金额等核心指标。
+    description: 销售订单事实表，记录销售数量和销售额等核心指标。
     columns:
       - name: order_id
         role: primary_key
-        description: 订单唯一标识。
+        description: 销售订单唯一标识。
         alias: [ 订单ID ]
         sync: false
 
@@ -141,46 +142,57 @@ tables:
 
       - name: product_id
         role: foreign_key
-        description: 关联商品维度的外键。
-        alias: [ 商品ID, 产品ID ]
+        description: 关联产品维度的外键。
+        alias: [ 产品ID, 商品ID ]
         sync: false
 
       - name: date_id
         role: foreign_key
-        description: 关联时间维度的外键。
+        description: 关联经营日期维度的外键。
         alias: [ 日期, 下单日期 ]
         sync: false
 
       - name: region_id
         role: foreign_key
-        description: 关联地区维度的外键。
-        alias: [ 地区ID, 区域ID ]
+        description: 关联销售区域维度的外键。
+        alias: [ 区域ID, 地区ID ]
         sync: false
 
       - name: order_quantity
         role: measure
-        description: 订单中商品的购买数量。
-        alias: [ 销量, 购买数量, 件数 ]
+        description: 销售订单的销售数量。
+        alias: [ 销售数量, 销量, 购买数量, 件数 ]
         sync: false
 
       - name: order_amount
         role: measure
-        description: 订单金额。
-        alias: [ 销售额, 订单金额, 收入 ]
+        description: 销售额（销售订单成交金额合计）。
+        alias: [ 销售额, 销售金额, 订单金额, 收入 ]
         sync: false
 
 # 需要同步到meta库的指标信息
 # 指标信息 =》保存到metric_info表
 # metric_info的id和column_info的id => 保存到column_metric表中
+# 核心指标口径：制造业销售经营口径，主口径为“销售额”，不再使用 GMV/AOV 作为主业务口径。
 metrics:
-  - name: GMV
-    description: 全称Gross Merchandise Value，表示所有订单的成交金额总和。
+  - name: 销售额
+    description: 销售额，口径为销售订单金额合计 SUM(order_amount)，表示销售订单的成交金额总和。
     relevant_columns:
       - fact_order.order_amount
-    alias: [ 成交总额, 订单总额 ]
-  - name: AOV
-    description: 全称Average Order Value，表示所有订单的成交金额平均值。
+    alias: [ 销售额, 销售金额, 订单金额, 收入, 成交额 ]
+  - name: 销售数量
+    description: 销售数量，口径为销售订单数量合计 SUM(order_quantity)，表示销售订单的销售数量总和。
+    relevant_columns:
+      - fact_order.order_quantity
+    alias: [ 销售数量, 销量, 销售量, 购买数量 ]
+  - name: 销售订单数
+    description: 销售订单数，口径为销售订单数 COUNT(DISTINCT order_id)，表示去重后的销售订单总数。
+    relevant_columns:
+      - fact_order.order_id
+    alias: [ 销售订单数, 订单数, 订单数量 ]
+  - name: 平均单件销售额
+    description: 平均单件销售额，口径为销售额除以销售数量 SUM(order_amount) / SUM(order_quantity)。仅表示销售额与销售数量的比值，不代表出厂价、含税价、成本或利润率。
     relevant_columns:
       - fact_order.order_amount
       - fact_order.order_quantity
-    alias: [ 平均单价, 平均订单金额 ]
+    alias: [ 平均单件销售额, 平均单价, 单件销售额 ]
