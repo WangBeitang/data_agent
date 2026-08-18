@@ -1,4 +1,4 @@
-"""归因状态与上下文（Stage 4）。
+"""归因状态与上下文（Stage 4 + Stage 5）。
 
 依据冻结文档（数据对象设计 §13 / SPEC §3.3 / §5.2）：
 
@@ -6,16 +6,16 @@
   持有请求级数据库 Session）；不得加入 Repository、Session、LLM Client；
 - AttributionState 使用 TypedDict，字段按数据对象设计冻结；
   max_query_actions 第一版固定为 6（初始化约束）；
-- 本 Stage 尚未实现 Report Generator，report 字段保持 None 占位，
-  不提前实现报告业务逻辑；
+- Stage 5 将 report 从临时占位改为正式 AttributionReport | None；
 - AttributionState 不复制 DataAgentState 的关键词/召回等内部字段。
 """
 
-from typing import Any, TypedDict
+from typing import TypedDict
 
 from app.models.analysis import (
     Action,
     AnalysisStatus,
+    AttributionReport,
     AttributionTarget,
     Calculation,
     Evidence,
@@ -51,8 +51,8 @@ class AttributionState(TypedDict):
     consecutive_empty_or_failed: int
     max_query_actions: int
     status: AnalysisStatus
-    # AttributionReport 属于 Stage 5 冻结对象，本阶段保持 None 占位
-    report: Any | None
+    # Stage 5 正式冻结对象；completed/partial 时由 Report Generator 填充
+    report: AttributionReport | None
     failure_reason: str | None
 
 

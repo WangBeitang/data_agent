@@ -153,7 +153,54 @@ class EvidenceBuilder:
             )
         return evidences
 
-    # ==================== 平均单件销售额证据 ====================
+    # ==================== 原始拆解事实证据（无 Calculation，Stage 5 最小扩展） ====================
+
+    def build_raw_breakdown(
+        self,
+        evidence_id: str,
+        action: Action,
+        observation: Observation,
+    ) -> Evidence:
+        """尚无总体变化 Calculation 时的原始拆解事实 Evidence。
+
+        - 只在成功 breakdown Observation 存在但无法生成 Contribution 时使用
+          （总体变化尚不存在，不猜 total_delta）；
+        - calculation_ids=[]（不引用任何计算）；
+        - statement 只使用 Observation.normalized_rows 中已存在的数字，
+          不得产生 Observation 中不存在的数字。
+        """
+        self._require_success(observation)
+        if observation.dimension is None:
+            raise ValueError("raw breakdown Evidence 需要维度拆解 Observation")
+
+        dimension_name = DIMENSION_DISPLAY_NAMES.get(observation.dimension, observation.dimension.value)
+        parts = []
+        for row in observation.normalized_rows:
+            member = row.dimension_value
+            values = []
+            for metric, mv in row.metric_values.items():
+                metric_name = METRIC_DISPLAY_NAMES.get(metric, metric.value)
+                values.append(
+                    f"{metric_name}由{mv.comparison_value}变为{mv.current_value}"
+                )
+            parts.append(f"{member}（{'，'.join(values)}）")
+        statement = f"各{dimension_name}本期与对比期指标：{'；'.join(parts)}。"
+
+        return Evidence(
+            evidence_id=evidence_id,
+            action_id=action.action_id,
+            observation_ids=[observation.observation_id],
+            calculation_ids=[],
+            title=f"{dimension_name}拆解事实",
+            statement=statement,
+            metric=action.metrics[0],
+            dimension=observation.dimension,
+            member=None,
+            direction=None,
+        )
+
+
+# ==================== 平均单件销售额证据 ====================
 
     def build_unit_price(
         self,

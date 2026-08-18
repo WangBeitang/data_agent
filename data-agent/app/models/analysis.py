@@ -520,3 +520,65 @@ class Evidence(BaseModel):
     dimension: DimensionKey | None = None
     member: str | None = None
     direction: FactorDirection | None = None
+
+
+# ==================== 归因报告（数据对象设计 §14 / Stage 5） ====================
+
+
+class MetricOverviewItem(BaseModel):
+    """指标概览条目（数据对象设计 §14.2）。
+
+    数值必须来自对应 PeriodChangeCalculation，不允许 LLM 生成数值。
+    """
+
+    metric: MetricKey
+    current_period_label: str
+    current_value: float
+    comparison_period_label: str
+    comparison_value: float
+    delta: float | None = None
+    change_rate: float | None = None
+    evidence_ids: list[str] = Field(default_factory=list)
+
+
+class FactorItem(BaseModel):
+    """驱动/抵消因素条目（数据对象设计 §14.3）。
+
+    - delta / contribution_rate 必须来自 ContributionCalculation 对应成员；
+    - evidence_ids 至少 1 个（必须引用支撑 Evidence）。
+    """
+
+    title: str
+    metric: MetricKey
+    dimension: DimensionKey
+    member: str
+    delta: float | None = None
+    contribution_rate: float | None = None
+    summary: str
+    evidence_ids: list[str] = Field(min_length=1)
+
+
+class RecommendationItem(BaseModel):
+    """建议条目（数据对象设计 §14.4）。
+
+    建议必须与已确认销售经营因素对应，且至少引用 1 条 Evidence；
+    没有证据时不允许凭常识扩展为生产、成本、库存、供应链等建议。
+    """
+
+    text: str
+    evidence_ids: list[str] = Field(min_length=1)
+
+
+class AttributionReport(BaseModel):
+    """结构化最终归因报告（数据对象设计 §14.1）。"""
+
+    analysis_id: str
+    status: AnalysisStatus
+    question_definition: str
+    core_conclusion: str
+    metric_overview: list[MetricOverviewItem]
+    drivers: list[FactorItem]
+    offsets: list[FactorItem]
+    evidence_ids: list[str]
+    data_boundaries: list[str]
+    recommendations: list[RecommendationItem]

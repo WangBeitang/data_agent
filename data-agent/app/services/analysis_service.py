@@ -1,6 +1,6 @@
-"""统一分析服务（Stage 3）。
+"""统一分析服务（Stage 3 + Stage 5）。
 
-HTTP 层唯一业务服务入口。职责（冻结 SPEC §5.12 / Stage 3 指令 §十）：
+HTTP 层唯一业务服务入口。职责（冻结 SPEC §5.12 / Stage 3 指令 §十 / Stage 5 指令 §十四）：
 
 ```text
 analysis_id
@@ -29,15 +29,34 @@ route(query)
 → done(completed)
 ```
 
-Attribution（Stage 3 过渡行为）：route(attribution) 后以 NOT_IMPLEMENTED
-受控失败结束，不伪造 query_result / report。
+Attribution（Stage 5 真实链路）：
+
+```text
+route(attribution)
+→ stage(target_parsing)
+→ stage(planning)
+→ action_start
+→ query_result
+→ calculation
+→ ...
+→ stage(report_generation)
+→ report
+→ done
+```
+
+本类负责归因事件的安全适配，Graph 内部业务事件在此映射为正式 SSE 事件；
+禁止向客户端泄露 traceback / 绝对路径 / DB 密码 / API Key / Prompt /
+隐藏推理 / Planner 原始非法输出。
 """
 
 import json
 import uuid
 
 from app.api.schemas.query_schema import QuerySchema
+from app.attribution.graph import AttributionGraph
 from app.attribution.intent_router import IntentRouter
+from app.attribution.state import initial_state
+from app.attribution.target_parser import TargetParser
 from app.core.context import get_req_id
 from app.core.log import logger
 from app.models.analysis import (
@@ -48,8 +67,9 @@ from app.models.analysis import (
 )
 from app.services.query_service import QueryService
 
-# 稳定错误码（API 接口设计 §13；NOT_IMPLEMENTED 仅属于 Stage 3 过渡码）
-_CODE_NOT_IMPLEMENTED = "NOT_IMPLEMENTED"
+# 稳定错误码（API 接口设计 §13；NOT_IMPLEMENTED 仅属于 Stage 3 过渡码，Stage 5 移除）
+_CODE_TARGET_PARSE_FAILED = "TARGET_PARSE_FAILED"
+_CODE_REPORT_GENERATION_FAILED = "REPORT_GENERATION_FAILED"
 _CODE_INTERNAL_ERROR = "INTERNAL_ERROR"
 
 # 安全错误信息：禁止包含 str(e) / traceback / 绝对路径 / 密码 / API Key / Prompt
@@ -58,7 +78,15 @@ _SAFE_ERROR_MESSAGES = {
     "QUERY_VALIDATION_FAILED": "查询 SQL 校验或修正失败，请调整问题后重试。",
     "QUERY_EXECUTION_FAILED": "查询 SQL 执行失败，请调整问题后重试。",
     "INTERNAL_ERROR": "分析执行过程中出现内部错误，请稍后重试。",
-    "NOT_IMPLEMENTED": "经营归因分析尚未进入实施阶段，当前仅支持普通问数。",
+    "TARGET_PARSE_FAILED": "无法从问题中可靠确定归因指标或比较期间，请补充具体日期和指标后重试。",
+    "REPORT_GENERATION_FAILED": "归因报告生成失败，请稍后重试。",
+}
+
+# 归因 stage 中文文案（API 接口设计 §8.2 稳定 stage_code 的子集）
+_STAGE_TEXTS = {
+    "target_parsing": "正在解析归因指标与期间",
+    "planning": "正在规划下一步归因动作",
+    "report_generation": "正在生成归因报告",
 }
 
 
@@ -120,9 +148,15 @@ class AnalysisService:
         self,
         query_service: QueryService,
         intent_router: IntentRouter | None = None,
+        target_parser: TargetParser | None = None,
+        attribution_graph: AttributionGraph | None = None,
     ):
         self._query_service = query_service
         self._intent_router = intent_router if intent_router is not None else IntentRouter()
+        self._target_parser = target_parser if target_parser is not None else TargetParser()
+        self._attribution_graph = (
+            attribution_graph if attribution_graph is not None else AttributionGraph(query_service=query_service)
+        )
 
     # ==================== 公共入口 ====================
 
@@ -141,24 +175,88 @@ class AnalysisService:
         yield self._route_event(analysis_id, route_result)
 
         if route_result.resolved_mode == AnalysisMode.attribution:
-            # Stage 3：只识别、不执行；受控失败，不伪造归因成功
-            yield self._error_event(
-                analysis_id,
-                _CODE_NOT_IMPLEMENTED,
-                phase=None,
-                fatal=True,
-            )
-            yield self._done_event(
-                analysis_id,
-                mode=AnalysisMode.attribution,
-                status=AnalysisStatus.failed,
-                query_count=0,
-            )
+            async for event in self._iter_attribution_mode(analysis_id, query, route_result):
+                yield event
             return
 
         # query 模式
         async for event in self._iter_query_mode(analysis_id, query):
             yield event
+
+    # ==================== attribution 模式 ====================
+
+    async def _iter_attribution_mode(
+        self,
+        analysis_id: str,
+        query: str,
+        route_result: RouteResult,
+    ):
+        tracker = _StageTracker(analysis_id)
+        state = None
+        try:
+            # ---- target parsing ----
+            for ev in tracker.on_stage("target_parsing", _STAGE_TEXTS["target_parsing"]):
+                yield ev
+            target = self._target_parser.parse(query)
+            if target is None:
+                for ev in tracker.close_failed():
+                    yield ev
+                yield self._error_event(
+                    analysis_id, _CODE_TARGET_PARSE_FAILED, phase="target_parsing", fatal=True
+                )
+                yield self._done_event(
+                    analysis_id,
+                    mode=AnalysisMode.attribution,
+                    status=AnalysisStatus.failed,
+                    query_count=0,
+                )
+                return
+            for ev in tracker.close_success():
+                yield ev
+
+            state = initial_state(
+                analysis_id=analysis_id,
+                question=query,
+                requested_mode=route_result.requested_mode,
+                route=route_result,
+                target=target,
+            )
+
+            # ---- Attribution Graph 主循环（业务事件 → SSE 适配） ----
+            async for event in self._attribution_graph.run(state):
+                etype = event["type"]
+                if etype == "action_start":
+                    for ev in tracker.on_stage("planning", _STAGE_TEXTS["planning"]):
+                        yield ev
+                    yield self._action_start_event(analysis_id, event)
+                elif etype == "query_result":
+                    yield self._attribution_query_result_event(analysis_id, event)
+                elif etype == "calculation":
+                    yield self._calculation_event(analysis_id, event)
+                elif etype == "report":
+                    for ev in tracker.close_success():
+                        yield ev
+                    for ev in tracker.on_stage("report_generation", _STAGE_TEXTS["report_generation"]):
+                        yield ev
+                    yield self._report_event(analysis_id, event)
+                    for ev in tracker.close_success():
+                        yield ev
+
+            yield self._attribution_done_event(analysis_id, state)
+        except Exception as e:
+            logger.error(f"归因执行异常 query={query!r}", exc_info=True)
+            phase = tracker.current
+            for ev in tracker.close_failed():
+                yield ev
+            query_count = state["query_action_count"] if state is not None else 0
+            yield self._error_event(analysis_id, _CODE_INTERNAL_ERROR, phase=phase, fatal=True)
+            yield self._done_event(
+                analysis_id,
+                mode=AnalysisMode.attribution,
+                status=AnalysisStatus.failed,
+                query_count=query_count,
+            )
+            return
 
     # ==================== query 模式 ====================
 
@@ -217,6 +315,73 @@ class AnalysisService:
             mode=AnalysisMode.query,
             status=AnalysisStatus.completed,
             query_count=1,
+        )
+
+    # ==================== attribution 事件构造 ====================
+
+    @staticmethod
+    def _action_start_event(analysis_id: str, event: dict) -> dict:
+        """action_start：Action 已通过 Router 校验后才由 Graph 产出（API §9）。"""
+        return {
+            "type": "action_start",
+            "analysis_id": analysis_id,
+            "action": event["action"].model_dump(),
+            "query_action_count": event["query_action_count"],
+            "max_query_actions": event["max_query_actions"],
+        }
+
+    @staticmethod
+    def _attribution_query_result_event(analysis_id: str, event: dict) -> dict:
+        """Attribution 模式 query_result：承载 Observation（API §10.2）。"""
+        obs = event["observation"]
+        return {
+            "type": "query_result",
+            "analysis_id": analysis_id,
+            "mode": AnalysisMode.attribution.value,
+            "action_id": obs.action_id,
+            "observation_id": obs.observation_id,
+            "sub_query": obs.sub_query,
+            "query": obs.sub_query,  # 第一版与 sub_query 相同
+            "sql": obs.query_result.sql,
+            "table": obs.query_result.table.model_dump(),
+            "dimension": obs.dimension.value if obs.dimension is not None else None,
+            "normalized_rows": [row.model_dump() for row in obs.normalized_rows],
+            "status": obs.status.value,
+            "error": obs.error,
+        }
+
+    @staticmethod
+    def _calculation_event(analysis_id: str, event: dict) -> dict:
+        """calculation：确定性计算 + 本次新产生的 Evidence（API §11）。"""
+        return {
+            "type": "calculation",
+            "analysis_id": analysis_id,
+            "action_id": event["action_id"],
+            "calculations": [c.model_dump() for c in event["calculations"]],
+            "evidences": [e.model_dump() for e in event["evidences"]],
+        }
+
+    @staticmethod
+    def _report_event(analysis_id: str, event: dict) -> dict:
+        """report：AttributionReport + 报告涉及的完整 Evidences（API §12）。"""
+        return {
+            "type": "report",
+            "analysis_id": analysis_id,
+            "report": event["report"].model_dump(),
+            "evidences": [e.model_dump() for e in event["evidences"]],
+        }
+
+    @staticmethod
+    def _attribution_done_event(analysis_id: str, state) -> dict:
+        """归因 done：completed / partial / failed 均保证收尾。"""
+        status = state["status"]
+        return AnalysisService._done_event(
+            analysis_id,
+            mode=AnalysisMode.attribution,
+            status=status,
+            query_count=state["query_action_count"],
+            has_report=state["report"] is not None,
+            message=state["failure_reason"] if status in (AnalysisStatus.partial, AnalysisStatus.failed) else None,
         )
 
     # ==================== 事件构造 ====================
