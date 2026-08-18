@@ -2,6 +2,7 @@ from fastapi import Depends
 from langchain_core.embeddings import Embeddings
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.attribution.intent_router import IntentRouter
 from app.clients.embedding_client_manager import embedding_client_manager
 from app.clients.es_client_manager import es_client_manager
 from app.clients.mysql_client_manager import dw_mysql_client_manager, meta_mysql_client_manager
@@ -11,6 +12,7 @@ from app.repositories.mysql.dw_mysql_repository import DWMysqlRepository
 from app.repositories.mysql.meta_mysql_repository import MetaMysqlRepository
 from app.repositories.qdrant.column_qdrant_repository import ColumnQdrantRepository
 from app.repositories.qdrant.metric_qdrant_repository import MetricQdrantRepository
+from app.services.analysis_service import AnalysisService
 from app.services.query_service import QueryService
 
 
@@ -66,3 +68,13 @@ def get_query_service(
         metric_qdrant_repo=metric_qdrant_repo,
         embedding_client=embedding_client
     )
+
+def get_analysis_service(
+    query_service: QueryService = Depends(get_query_service),
+) -> AnalysisService:
+    """HTTP 层唯一业务服务入口。
+
+    复用 get_query_service，不重新创建 Repository / Session / Client。
+    IntentRouter 为无状态轻量对象（LLM 使用全局单例）。
+    """
+    return AnalysisService(query_service=query_service, intent_router=IntentRouter())

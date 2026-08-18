@@ -2,50 +2,31 @@
   <div class="chat-page">
     <!-- 消息区 -->
     <div ref="messagesEl" class="messages">
-      <div
-        v-for="(msg, index) in messages"
-        :key="index"
-        :class="['message-row', msg.role]"
-      >
+      <div v-for="(msg, index) in messages" :key="index" :class="['message-row', msg.role]">
         <div v-if="msg.role === 'assistant'" class="avatar">🤖</div>
 
         <div class="bubble">
-          <!-- 文本 -->
-          <div v-if="msg.type === 'text'">
-            {{ msg.content }}
+          <!-- 用户文本 -->
+          <div v-if="msg.role === 'user'">{{ msg.content }}</div>
+
+          <!-- 分析中 -->
+          <div v-else-if="msg.loading && !msg.error" class="analysis-pending">
+            <div v-if="msg.stages.length === 0">正在启动分析...</div>
+            <AnalysisTimeline :stages="msg.stages" :has-error="!!msg.error" />
           </div>
 
-          <!-- 步骤 -->
-          <div v-else-if="msg.type === 'steps'" class="steps">
-            <div v-for="(step, sIdx) in msg.steps" :key="sIdx" class="step">
-              <span class="dot" :class="step.status"></span>
-              <span>{{ step.text }}</span>
+          <!-- 完成的分析 -->
+          <div v-else>
+            <div v-if="msg.mode" class="route-badge">
+              <span class="badge">{{ modeText(msg.mode.resolved) }}</span>
+              <span v-if="msg.mode.source === 'forced'" class="badge-sub">强制模式</span>
             </div>
-          </div>
-
-          <!-- 表格 -->
-          <div v-else-if="msg.type === 'table'" class="table-wrap">
-            <table class="result-table">
-              <thead>
-                <tr>
-                  <th v-for="col in msg.columns" :key="col">
-                    {{ col }}
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="(row, rIdx) in msg.rows" :key="rIdx">
-                  <td v-for="col in msg.columns" :key="col">
-                    {{ row[col] }}
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-
-          <!-- 错误 -->
-          <div v-else-if="msg.type === 'error'" class="error-text">
-            {{ msg.content }}
+            <AnalysisTimeline v-if="msg.stages.length > 0" :stages="msg.stages" :has-error="!!msg.error" />
+            <ResultTable v-if="msg.table" :columns="msg.table.columns" :rows="msg.table.rows" />
+            <div v-if="msg.error" class="error-text">
+              <div v-if="msg.error.code" class="error-code">[{{ msg.error.code }}]</div>
+              {{ msg.error.message }}
+            </div>
           </div>
         </div>
 
@@ -60,7 +41,8 @@
         <input
           v-model="question"
           @keyup.enter="sendQuestion"
-          placeholder="请输入你的问题..."
+          placeholder="请输入你的问题，例如：统计2025年各月销售额"
+          :disabled="loading"
         />
         <button @click="sendQuestion" :disabled="loading">
           {{ loading ? "执行中..." : "发送" }}
@@ -72,8 +54,9 @@
 
 <script setup>
 import { nextTick, ref } from "vue";
-
-const API_URL = "/api/query";
+import { fetchAnalysisStream } from "./composables/useAnalysisStream.js";
+import AnalysisTimeline from "./components/AnalysisTimeline.vue";
+import ResultTable from "./components/ResultTable.vue";
 
 const question = ref("");
 const loading = ref(false);
@@ -86,94 +69,83 @@ function scrollToBottom() {
   el.scrollTop = el.scrollHeight;
 }
 
-async function sendQuestion() {
-  if (!question.value || loading.value) return;
+function modeText(mode) {
+  return mode === "attribution" ? "经营归因" : "普通问数";
+}
 
-  const q = question.value;
+function handleEvent(msg, data) {
+  switch (data.type) {
+    case "route":
+      msg.mode = {
+        requested: data.requested_mode,
+        resolved: data.resolved_mode,
+        source: data.source,
+      };
+      break;
+    case "stage":
+      upsertStage(msg.stages, data);
+      break;
+    case "query_result":
+      // 列只来自 table.columns / table.rows
+      msg.table = { columns: data.table?.columns || [], rows: data.table?.rows || [] };
+      break;
+    case "error":
+      msg.error = { code: data.code, message: data.message };
+      break;
+    case "done":
+      // done 是结束 loading 的正式依据（连接关闭不算正常结束）
+      break;
+    default:
+      break;
+  }
+}
+
+function upsertStage(stages, data) {
+  const existing = stages.find((s) => s.stage_code === data.stage_code);
+  if (existing) {
+    existing.status = data.status;
+    if (data.status === "success" || data.status === "failed") {
+      existing.stage = data.stage;
+    }
+  } else {
+    stages.push({ stage_code: data.stage_code, stage: data.stage, status: data.status });
+  }
+}
+
+async function sendQuestion() {
+  const q = question.value.trim();
+  if (!q || loading.value) return;
+
   question.value = "";
   loading.value = true;
 
-  messages.value.push({ role: "user", type: "text", content: q });
+  messages.value.push({ role: "user", content: q });
 
-  const stepIndex =
-    messages.value.push({
-      role: "assistant",
-      type: "steps",
-      steps: [],
-    }) - 1;
+  const msg = {
+    role: "assistant",
+    loading: true,
+    stages: [],
+    table: null,
+    error: null,
+    mode: null,
+  };
+  messages.value.push(msg);
 
   await nextTick();
   scrollToBottom();
 
   try {
-    const response = await fetch(API_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      // ✅ 这里已由 question 改为 query
-      body: JSON.stringify({ query: q }),
+    await fetchAnalysisStream({
+      query: q,
+      mode: "auto",
+      onEvent: (data) => handleEvent(msg, data),
     });
-
-    if (!response.body) throw new Error("服务器未返回流");
-
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder("utf-8");
-    let buffer = "";
-
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
-
-      buffer += decoder.decode(value, { stream: true });
-      const events = buffer.split("\n\n");
-      buffer = events.pop();
-
-      for (const evt of events) {
-        const line = evt.trim();
-        if (!line.startsWith("data:")) continue;
-
-        let data;
-        try {
-          data = JSON.parse(line.replace(/^data:\s*/, ""));
-        } catch {
-          continue;
-        }
-
-        const steps = messages.value[stepIndex].steps;
-
-        if (data.stage) {
-          const last = steps.at(-1);
-          if (last && last.status === "running") last.status = "success";
-          steps.push({ text: data.stage, status: "running" });
-        } else if (data.error) {
-          const last = steps.at(-1);
-          if (last) last.status = "error";
-          messages.value.push({
-            role: "assistant",
-            type: "error",
-            content: data.error,
-          });
-        } else if (Array.isArray(data.result)) {
-          const last = steps.at(-1);
-          if (last) last.status = "success";
-          messages.value.push({
-            role: "assistant",
-            type: "table",
-            columns: Object.keys(data.result[0] || {}),
-            rows: data.result,
-          });
-        }
-
-        await nextTick();
-        scrollToBottom();
-      }
-    }
   } catch (e) {
-    messages.value.push({
-      role: "assistant",
-      type: "error",
-      content: e?.message || "请求失败",
-    });
+    if (!msg.error) {
+      msg.error = { code: "NETWORK_ERROR", message: e?.message || "请求失败" };
+    }
   } finally {
+    msg.loading = false;
     loading.value = false;
     await nextTick();
     scrollToBottom();
@@ -245,66 +217,37 @@ async function sendQuestion() {
   background: #e6f4ff;
 }
 
-/* 步骤 */
-.steps {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.step {
+/* 路由徽标 */
+.route-badge {
   display: flex;
   align-items: center;
   gap: 8px;
+  margin-bottom: 8px;
 }
-.dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-}
-.dot.running {
-  background: #f1c40f;
-}
-.dot.success {
-  background: #2ecc71;
-}
-.dot.error {
-  background: #e74c3c;
-}
-
-/* 表格 */
-.table-wrap {
-  max-width: 100%;
-  overflow-x: auto;
-}
-
-.result-table {
-  width: max-content;
-  min-width: 100%;
-  table-layout: auto;
-  border-collapse: collapse;
-}
-
-.result-table th,
-.result-table td {
-  border: 1px solid #ddd;
-  padding: 6px 12px;
-  white-space: nowrap;
-  font-size: 13px;
-  text-align: left;
-}
-
-.result-table th {
-  background: #fafafa;
+.badge {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: #eef4ff;
+  color: #2f6fed;
+  font-size: 12px;
   font-weight: 600;
-  position: sticky;
-  top: 0;
-  z-index: 1;
+}
+.badge-sub {
+  color: #999;
+  font-size: 12px;
 }
 
 /* 错误 */
 .error-text {
   color: #e74c3c;
   font-weight: 600;
+  margin-top: 6px;
+}
+.error-code {
+  font-size: 12px;
+  font-weight: 400;
+  opacity: 0.7;
 }
 
 /* 悬浮输入框 */

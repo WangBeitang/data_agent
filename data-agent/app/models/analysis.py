@@ -1,15 +1,16 @@
-"""统一分析数据对象（Stage 2 范围）。
+"""统一分析数据对象（Stage 2 + Stage 3 范围）。
 
-依据冻结文档《制造业销售经营归因分析系统_数据对象设计.md》实现本阶段所需公共对象：
+依据冻结文档《制造业销售经营归因分析系统_数据对象设计.md》实现当前阶段所需公共对象：
 
-- JsonScalar / ObservationStatus / QueryTable / QueryExecutionResult
+- Stage 2：JsonScalar / ObservationStatus / QueryTable / QueryExecutionResult
+- Stage 3：RequestMode / AnalysisMode / RouteSource / AnalysisStatus / RouteResult
 
 设计约束（来自冻结 SPEC §3.2 / §5.1）：
 
 - 本文件为中立模型模块，不依赖 LLM、数据库、LangGraph 节点；
 - 不放置业务流程函数；
 - QueryExecutionResult 不包含 Attribution/Planner/Evidence 信息；
-- 后续 Stage 的枚举与模型（RouteResult、Action、Observation、Calculation、
+- 后续 Stage 的枚举与模型（Action、Observation、Calculation、
   Evidence、AttributionReport 等）在对应 Stage 再行补充，本阶段不提前实现。
 """
 
@@ -28,6 +29,63 @@ class ObservationStatus(str, Enum):
     success = "success"
     empty = "empty"
     failed = "failed"
+
+
+class RequestMode(str, Enum):
+    """请求模式（API QueryRequest.mode，接口设计 §4.1）。"""
+
+    auto = "auto"
+    query = "query"
+    attribution = "attribution"
+
+
+class AnalysisMode(str, Enum):
+    """最终分析模式（route.resolved_mode / done.mode）。
+
+    只允许 query / attribution，永远不允许 auto。
+    """
+
+    query = "query"
+    attribution = "attribution"
+
+
+class RouteSource(str, Enum):
+    """意图路由来源（route.source）。"""
+
+    forced = "forced"
+    rule = "rule"
+    llm = "llm"
+
+
+class AnalysisStatus(str, Enum):
+    """一次分析整体状态（done.status）。"""
+
+    running = "running"
+    completed = "completed"
+    partial = "partial"
+    failed = "failed"
+
+
+class RouteResult(BaseModel):
+    """意图路由结果（数据对象设计 §4.3 / API 接口设计 §7 route 事件）。
+
+    - requested_mode：请求模式（auto/query/attribution）；
+    - resolved_mode：最终模式，只允许 query/attribution；
+    - source：forced / rule / llm；
+    - rule：简短可展示规则文本，无则 null。
+    """
+
+    requested_mode: RequestMode
+    resolved_mode: AnalysisMode
+    source: RouteSource
+    rule: str | None = None
+
+    @model_validator(mode="after")
+    def _check_resolved_mode(self) -> "RouteResult":
+        # AnalysisMode 本身只含 query/attribution，此处为契约性兜底校验
+        if self.resolved_mode not in (AnalysisMode.query, AnalysisMode.attribution):
+            raise ValueError("resolved_mode 只能是 query 或 attribution")
+        return self
 
 
 class QueryTable(BaseModel):
