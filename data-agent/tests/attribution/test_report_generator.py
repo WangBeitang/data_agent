@@ -221,14 +221,15 @@ def test_llm_invalid_output_falls_back_to_template():
 
 
 def test_llm_success_applies_summaries_and_recommendations():
+    # 数值守卫要求：LLM 文案只能使用 Evidence/Calculation/原问题/目标期间中的数字
     llm = _FakeLLM(output=(
-        '{"question_definition": "分析2月销售额下降", '
-        '"core_conclusion": "数据显示2月销售额较1月下降约26.62%。", '
+        '{"question_definition": "分析2025年2月销售额下降原因", '
+        '"core_conclusion": "数据显示2025年2月销售额为80009.0，较2025年1月的109030.5减少29021.5。", '
         '"factor_summaries": {"华东的销售区域贡献": "华东变化贡献最大。"}, '
         '"recommendations": [{"factor_title": "华东的销售区域贡献", "text": "建议关注华东区域。"}]}'
     ))
     report = _report(llm=llm)
-    assert report.question_definition == "分析2月销售额下降"
+    assert report.question_definition == "分析2025年2月销售额下降原因"
     assert report.core_conclusion
     assert llm.calls == 1
     # factor_summaries 按 title 匹配并合入
@@ -333,3 +334,60 @@ def test_report_numbers_all_derived_from_evidence_and_calc():
 def test_report_status_matches_state():
     assert _report().status == AnalysisStatus.completed
     assert _report(_build_state(status=AnalysisStatus.partial)).status == AnalysisStatus.partial
+
+
+# ==================== LLM Report schema / 数值守卫 / 失败契约 ====================
+
+
+def test_llm_report_prompt_recommendation_json_passes_schema():
+    """attribution_report.prompt 约定的合法 recommendation JSON 能通过 schema。"""
+    from app.attribution.report_generator import ReportGenerator
+
+    text = (
+        '{"question_definition": "q", "core_conclusion": "c", '
+        '"factor_summaries": {}, '
+        '"recommendations": [{"factor_title": "华东的销售区域贡献", "text": "建议关注华东区域。"}]}'
+    )
+    parsed = ReportGenerator._parse_llm_report(text)
+    assert parsed is not None
+    assert parsed.recommendations[0].factor_title == "华东的销售区域贡献"
+    assert parsed.recommendations[0].text == "建议关注华东区域。"
+
+
+def test_llm_report_rejects_extra_fields():
+    """_LLMReport / _LLMRecommendation extra=forbid：额外字段 → 解析失败。"""
+    from app.attribution.report_generator import ReportGenerator
+
+    assert ReportGenerator._parse_llm_report(
+        '{"question_definition": "q", "core_conclusion": "c", "factor_summaries": {}, '
+        '"recommendations": [], "hidden": "x"}'
+    ) is None
+    assert ReportGenerator._parse_llm_report(
+        '{"question_definition": "q", "core_conclusion": "c", "factor_summaries": {}, '
+        '"recommendations": [{"factor_title": "华东的销售区域贡献", "text": "t", "confidence": 0.9}]}'
+    ) is None
+
+
+def test_llm_new_number_triggers_deterministic_fallback():
+    """LLM 引入 Evidence 外新数字 → 判非法 → deterministic fallback（不修正）。"""
+    llm = _FakeLLM(output=(
+        '{"question_definition": "q", '
+        '"core_conclusion": "数据显示销售额下降999.99。", '  # 999.99 不在证据中
+        '"factor_summaries": {}, "recommendations": []}'
+    ))
+    state = _build_state()
+    report = _report(state, llm=llm)
+    assert "999.99" not in report.core_conclusion  # 模板兜底，未使用 LLM 新数字
+    assert report.metric_overview  # 确定性数值未丢
+    assert report.drivers  # Evidence 未丢
+
+
+def test_llm_percentage_form_change_rate_still_rejected():
+    """把 0.2662 写成 26.62%（新量级）→ 判非法 → 模板。"""
+    llm = _FakeLLM(output=(
+        '{"question_definition": "q", '
+        '"core_conclusion": "变化率约26.62%。", '  # 0.2662 被写成 26.62
+        '"factor_summaries": {}, "recommendations": []}'
+    ))
+    report = _report(llm=llm)
+    assert "26.62" not in report.core_conclusion

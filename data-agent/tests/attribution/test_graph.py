@@ -81,6 +81,7 @@ def _action(
     current_period=FEB,
     comparison_period=JAN,
     source_observation_ids=None,
+    filters=None,
 ) -> Action:
     return Action(
         action_id=action_id,
@@ -90,6 +91,7 @@ def _action(
         comparison_period=comparison_period,
         dimension=dimension,
         source_observation_ids=source_observation_ids or [],
+        filters=filters or [],
         reason="测试动作",
     )
 
@@ -130,15 +132,33 @@ class ScriptedQueryService:
 
 
 class ScriptedPlanner(Planner):
-    """可编程 Planner：按序输出 Action；耗尽返回 None；fallback 默认 None。"""
+    """可编程 Planner：按序输出 Action；模拟 plan 的 retry budget
+    （validator 拒绝计入 budget，最多尝试 2 次）；fallback 默认 None。"""
 
     def __init__(self, actions=None, fallback=None):
         super().__init__(llm=None)
         self._actions = list(actions or [])
         self._fallback = fallback
+        self.calls = 0
+        self.feedbacks: list[str] = []
 
-    def plan(self, state_view, feedback=None):
-        return self._actions.pop(0) if self._actions else None
+    def plan(self, state_view, feedback=None, validator=None):
+        self.calls += 1
+        if feedback is not None:
+            self.feedbacks.append(feedback)
+        for _ in range(2):  # 与真实 Planner 共享的 retry budget
+            if not self._actions:
+                return None
+            candidate = self._actions.pop(0)
+            if candidate is None:
+                return None
+            if validator is not None:
+                validation = validator(candidate)
+                if not validation.ok:
+                    self.feedbacks.append(validation.error_message or "Action 未通过状态校验")
+                    continue
+            return candidate
+        return None
 
     def fallback_action(self, state_view, tried_keys):
         if callable(self._fallback):
@@ -201,6 +221,101 @@ def test_query_action_executes_exactly_once_and_counts():
     assert state["status"] == AnalysisStatus.completed
     assert [e["type"] for e in events].count("query_result") == 3
     assert [e["type"] for e in events].count("action_start") == 4  # 3 查询 + 1 finish
+
+
+# ==================== action_start 计数（正式 SSE 语义） ====================
+
+
+def test_action_start_query_count_includes_current_action():
+    """第一个查询 Action 的 action_start.query_action_count == 1。"""
+    planner = ScriptedPlanner([
+        _action(ActionType.compare_period, "a1"),
+        _action(ActionType.breakdown_region, "a2", DimensionKey.region),
+        _action(ActionType.breakdown_category, "a3", DimensionKey.category),
+        _action(ActionType.finish_analysis, "a9"),
+    ])
+    state = _state("为什么 2 月销售额下降？", TARGET_AMOUNT)
+    results = [
+        _result_success(OVERALL_AMOUNT),
+        _result_success(_dimension_rows(REGION_ROWS)),
+        _result_success(_dimension_rows(CATEGORY_ROWS)),
+    ]
+    graph, events = asyncio_run(_run(planner, results, state))
+    starts = [e for e in events if e["type"] == "action_start"]
+    # compare=1, region=2, category=3, finish(本地)=3
+    assert starts[0]["query_action_count"] == 1
+    assert starts[1]["query_action_count"] == 2
+    assert starts[2]["query_action_count"] == 3
+    # finish_analysis 是本地 Action：不增加计数
+    assert starts[3]["query_action_count"] == 3
+
+
+def test_action_start_sixth_query_shows_six():
+    """第六个查询 Action 的 action_start.query_action_count == 6。"""
+    planner = ScriptedPlanner([
+        _action(ActionType.compare_period, "a1"),
+        _action(ActionType.breakdown_region, "a2", DimensionKey.region),
+        _action(ActionType.breakdown_category, "a3", DimensionKey.category),
+        _action(ActionType.breakdown_product, "a4", DimensionKey.product),
+        _action(ActionType.breakdown_customer, "a5", DimensionKey.customer),
+        _action(ActionType.breakdown_customer, "a6", DimensionKey.customer_level),
+    ])
+    state = _state("为什么 2 月销售额下降？", TARGET_AMOUNT)
+    results = [
+        _result_success(OVERALL_AMOUNT),
+        _result_success(_dimension_rows(REGION_ROWS)),
+        _result_success(_dimension_rows(CATEGORY_ROWS)),
+        _result_success(_dimension_rows([("P1", 5000.0, 6000.0)])),
+        _result_success(_dimension_rows([("C1", 3000.0, 1000.0)])),
+        _result_success(_dimension_rows([("黄金", 4000.0, 2000.0)])),
+    ]
+    graph, events = asyncio_run(_run(planner, results, state))
+    starts = [e for e in events if e["type"] == "action_start"]
+    assert [e["query_action_count"] for e in starts] == [1, 2, 3, 4, 5, 6]
+    assert state["query_action_count"] == 6
+    assert state["status"] == AnalysisStatus.partial  # 达上限强制停止
+
+
+# ==================== contribution calculation_id 唯一性 ====================
+
+
+def test_contribution_calculation_ids_unique_per_observation():
+    """同 dimension 同 metric、不同 filter 的两次合法拆解不得产生相同 calculation_id。"""
+    from app.models.analysis import FilterCondition, FilterOperator
+
+    filter_a = FilterCondition(dimension=DimensionKey.category, operator=FilterOperator.eq, values=["手机数码"])
+    filter_b = FilterCondition(dimension=DimensionKey.category, operator=FilterOperator.in_, values=["家用电器", "食品饮料"])
+    planner = ScriptedPlanner([
+        _action(ActionType.compare_period, "a1"),
+        _action(ActionType.breakdown_product, "a2", DimensionKey.product, filters=[filter_a]),
+        _action(ActionType.breakdown_product, "a3", DimensionKey.product, filters=[filter_b]),
+        _action(ActionType.finish_analysis, "a9"),
+    ])
+    state = _state("为什么 2 月销售额下降？", TARGET_AMOUNT)
+    results = [
+        _result_success(OVERALL_AMOUNT),
+        _result_success(_dimension_rows([("P1", 4000.0, 6000.0), ("P2", 1000.0, 2000.0)])),
+        _result_success(_dimension_rows([("P3", 5000.0, 1000.0), ("P4", 2000.0, 3000.0)])),
+    ]
+    graph, _ = asyncio_run(_run(planner, results, state))
+    contributions = [c for c in state["calculations"] if isinstance(c, ContributionCalculation)]
+    assert len(contributions) == 2
+    ids = [c.calculation_id for c in contributions]
+    assert len(set(ids)) == len(ids)  # 唯一
+    # Evidence.calculation_ids 唯一追溯各自 Calculation
+    all_calc_ids = {c.calculation_id for c in state["calculations"]}
+    for ev in state["evidences"]:
+        for cid in ev.calculation_ids:
+            assert cid in all_calc_ids
+    # 每个 contribution calc 有对应的 contribution Evidence
+    for calc in contributions:
+        linked = [ev for ev in state["evidences"] if calc.calculation_id in ev.calculation_ids]
+        assert linked  # Evidence 正确关联各自 Calculation
+        # 关联的 Evidence 数值来自该 calc 的 items
+        for ev in linked:
+            if ev.member is not None:
+                item = next(i for i in calc.items if i.member == ev.member)
+                assert ev.statement  # 由 builder 从 calc 数据生成
 
 
 def test_duplicate_action_does_not_increase_query_count():
@@ -435,26 +550,19 @@ def test_breakdown_without_period_change_keeps_raw_evidence():
 
 
 def test_planner_invalid_gets_router_feedback_and_retries():
-    class RetryPlanner(Planner):
-        def __init__(self):
-            super().__init__(llm=None)
-            self.calls = 0
-            self.feedbacks: list[str] = []
-            self.queue = [
-                _action(ActionType.compare_period, "a1"),
-                _action(ActionType.compare_period, "a1_dup"),  # 非法（duplicate）
-                _action(ActionType.breakdown_region, "a2", DimensionKey.region),
-                _action(ActionType.breakdown_category, "a3", DimensionKey.category),
-                _action(ActionType.finish_analysis, "a9"),
-            ]
+    """schema/Router 非法共享 retry budget：一次 plan_next 最多 2 次 LLM 尝试。
 
-        def plan(self, state_view, feedback=None):
-            self.calls += 1
-            if feedback is not None:
-                self.feedbacks.append(feedback)
-            return self.queue.pop(0) if self.queue else None
-
-    planner = RetryPlanner()
+    - 第 1 轮 plan：compare 执行；
+    - 第 2 轮 plan：duplicate 被 validator 拒 → budget 内重试 region 成功；
+    - 第 3 轮 plan：category；第 4 轮 plan：finish → completed。
+    """
+    planner = ScriptedPlanner([
+        _action(ActionType.compare_period, "a1"),
+        _action(ActionType.compare_period, "a1_dup"),  # 非法（duplicate）
+        _action(ActionType.breakdown_region, "a2", DimensionKey.region),
+        _action(ActionType.breakdown_category, "a3", DimensionKey.category),
+        _action(ActionType.finish_analysis, "a9"),
+    ])
     state = _state("为什么 2 月销售额下降？", TARGET_AMOUNT)
     results = [
         _result_success(OVERALL_AMOUNT),
@@ -462,12 +570,52 @@ def test_planner_invalid_gets_router_feedback_and_retries():
         _result_success(_dimension_rows(CATEGORY_ROWS)),
     ]
     graph, _ = asyncio_run(_run(planner, results, state))
-    # 第一次非法（calls=2 duplicate）→ Router 反馈（calls=3 重试成功）→
-    # 后续正常执行：compare + region + category + finish
-    assert planner.calls == 5
-    assert planner.feedbacks and "重复" in planner.feedbacks[0]  # 反馈的是可读 error_message
+    # 4 轮 plan（每轮最多 2 次尝试，无 2+2 嵌套）
+    assert planner.calls == 4
+    assert planner.feedbacks and any("重复" in f for f in planner.feedbacks)
     assert state["query_action_count"] == 3
     assert state["status"] == AnalysisStatus.completed
+
+
+# ==================== REPORT_GENERATION_FAILED（deterministic 失败） ====================
+
+
+def test_deterministic_report_failure_emits_report_failed():
+    """deterministic report 抛异常 → 状态 failed、report=None、report_failed 事件。"""
+    planner = ScriptedPlanner([
+        _action(ActionType.compare_period, "a1"),
+        _action(ActionType.breakdown_region, "a2", DimensionKey.region),
+        _action(ActionType.breakdown_category, "a3", DimensionKey.category),
+        _action(ActionType.finish_analysis, "a9"),
+    ])
+    state = _state("为什么 2 月销售额下降？", TARGET_AMOUNT)
+    results = [
+        _result_success(OVERALL_AMOUNT),
+        _result_success(_dimension_rows(REGION_ROWS)),
+        _result_success(_dimension_rows(CATEGORY_ROWS)),
+    ]
+    graph = AttributionGraph(
+        query_service=ScriptedQueryService(results),
+        planner=planner,
+        report_generator=ReportGenerator(llm=_FakeLLM()),
+    )
+
+    def _boom(state):
+        raise RuntimeError("deterministic report crashed")
+
+    graph._report_generator.generate = _boom
+
+    events = []
+    async def _collect():
+        async for event in graph.run(state):
+            events.append(event)
+
+    asyncio_run(_collect())
+    assert state["status"] == AnalysisStatus.failed  # 不伪装 completed
+    assert state["report"] is None
+    assert state["failure_reason"] == "归因报告生成失败"
+    assert any(e["type"] == "report_failed" for e in events)
+    assert not any(e["type"] == "report" for e in events)
 
 
 def test_calculate_contribution_local_action_executes_without_query():

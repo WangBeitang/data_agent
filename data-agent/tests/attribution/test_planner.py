@@ -244,6 +244,91 @@ def test_fallback_action_still_requires_router():
     assert candidate.reason  # reason 必填，Router 可校验
 
 
+# ==================== retry budget 共享（schema + Router） ====================
+
+
+def test_plan_llm_invoke_budget_shared_between_schema_and_router():
+    """schema 与 Router 非法共享同一个 retry budget：LLM 总调用 <= 2。"""
+
+    class _SeqLLM:
+        def __init__(self, outputs):
+            self._outputs = list(outputs)
+            self.calls = 0
+
+        def invoke(self, prompt):
+            self.calls += 1
+            return type("R", (), {"content": self._outputs.pop(0) if self._outputs else "{}"})
+
+    llm = _SeqLLM([
+        # 第一次：schema 非法（breakdown_region 但 dimension=category）
+        '{"type": "breakdown_region", "metrics": ["sales_amount"], "dimension": "category", "reason": "x"}',
+        # 第二次：结构合法但 Router 状态非法（validator 拒绝）
+        '{"type": "breakdown_region", "metrics": ["sales_amount"], "dimension": "region", "reason": "x"}',
+    ])
+    planner = Planner(llm=llm)
+
+    def validator(action):
+        from app.attribution.action_router import ActionValidation
+
+        return ActionValidation.reject("ACTION_DUPLICATE", "相同 Action 已执行过，禁止重复查询")
+
+    action = planner.plan(_view(), validator=validator)
+    assert action is None  # 两次尝试都用完 → 调用方走确定性 fallback
+    assert llm.calls == 2  # 总调用不超过 2，不存在 2+2 嵌套
+
+
+def test_plan_router_reject_then_success_within_budget():
+    """Router 拒绝一次后重试成功：总调用 2 次且返回合法 Action。"""
+
+    class _SeqLLM:
+        def __init__(self):
+            self.calls = 0
+
+        def invoke(self, prompt):
+            self.calls += 1
+            if self.calls == 1:
+                return type("R", (), {"content": '{"type": "breakdown_region", "metrics": ["sales_amount"], "dimension": "region", "reason": "x"}'})
+            return type("R", (), {"content": '{"type": "breakdown_category", "metrics": ["sales_amount"], "dimension": "category", "reason": "x"}'})
+
+    llm = _SeqLLM()
+    planner = Planner(llm=llm)
+
+    def validator(action):
+        from app.attribution.action_router import ActionValidation
+
+        if action.type == ActionType.breakdown_region:
+            return ActionValidation.reject("ACTION_DUPLICATE", "该维度已拆解过")
+        return ActionValidation.accept()
+
+    action = planner.plan(_view(), validator=validator)
+    assert action is not None
+    assert action.type == ActionType.breakdown_category
+    assert llm.calls == 2
+
+
+# ==================== 指标硬校验（target 外指标拒绝） ====================
+
+
+def test_plan_rejects_metric_outside_target():
+    """Planner 不得把 AttributionTarget 之外的业务指标加入 Action。"""
+    llm = _FakeLLM([
+        '{"type": "compare_period", "metrics": ["order_count"], "reason": "x"}',
+        '{"type": "compare_period", "metrics": ["order_count"], "reason": "x"}',
+    ])
+    # _view 的 target.metrics=[sales_amount]：order_count 不在目标范围 → 拒绝
+    assert Planner(llm=llm).plan(_view()) is None
+    assert llm.calls == 2
+
+
+def test_plan_unit_price_metrics_exempt_from_target_check():
+    """analyze_unit_price 指标由系统固定，不受 target 指标范围限制。"""
+    llm = _FakeLLM(['{"type": "analyze_unit_price", "reason": "x"}'])
+    action = Planner(llm=llm).plan(_view())  # target 只有 sales_amount
+    assert action is not None
+    assert action.type == ActionType.analyze_unit_price
+    assert set(action.metrics) == {MetricKey.sales_amount, MetricKey.sales_quantity}
+
+
 # ==================== 剩余次数不足的确定性 finish 短路 ====================
 
 

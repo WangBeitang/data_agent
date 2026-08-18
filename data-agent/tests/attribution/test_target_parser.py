@@ -86,17 +86,55 @@ def test_missing_period_returns_none():
     assert parser.parse("为什么销售额下降？") is None
 
 
-def test_unsupported_business_metric_rejected():
-    """非支持业务指标（成本/利润/库存/生产）→ TARGET_PARSE_FAILED。"""
+def test_unsupported_business_metric_rejected_without_llm_call():
+    """非支持业务指标（成本/利润/库存/生产）→ TARGET_PARSE_FAILED。
 
-    class _NeverCalledLLM:
+    硬拒绝：unsupported term 一旦命中直接返回 None，不得调用 LLM
+    （真实断言 call_count == 0）。
+    """
+
+    class _CountingLLM:
+        def __init__(self):
+            self.call_count = 0
+
         def invoke(self, prompt):
+            self.call_count += 1
             raise AssertionError("不支持指标不应调用 LLM")
 
-    parser = TargetParser(llm=_NeverCalledLLM())
+    llm = _CountingLLM()
+    parser = TargetParser(llm=llm)
     assert parser.parse("为什么 2025 年 2 月利润下降？") is None
     assert parser.parse("为什么 2025 年 2 月库存增加？") is None
     assert parser.parse("为什么 2025 年 2 月生产成本上升？") is None
+    assert llm.call_count == 0  # 硬拒绝，不调用 LLM
+
+
+def test_explicit_comparison_year_preferred():
+    """显式完整比较期间优先："为什么2025年6月销售额较2024年6月下降？"
+
+    current=2025-06，comparison=2024-06；不得把明确的 2024-06 静默解析成
+    2025-05（同年/跨年前推规则只在未给出比较年份时使用）。
+    """
+    target = TargetParser(llm=None).parse("为什么2025年6月销售额较2024年6月下降？")
+    assert target is not None
+    assert target.current_period.label == "2025年6月"
+    assert target.comparison_period.label == "2024年6月"
+
+
+def test_explicit_comparison_year_with_spaces():
+    """带空格的显式比较年份同样支持。"""
+    target = TargetParser(llm=None).parse("为什么 2025 年 6 月销售额较 2024 年 6 月下降？")
+    assert target is not None
+    assert target.current_period.label == "2025年6月"
+    assert target.comparison_period.label == "2024年6月"
+
+
+def test_comparison_without_year_falls_back_to_current_year():
+    """未给出比较年份 → 沿用本期年份（2025-06 较 5 月 → 2025-05）。"""
+    target = TargetParser(llm=None).parse("为什么2025年6月销售额较5月下降？")
+    assert target is not None
+    assert target.current_period.label == "2025年6月"
+    assert target.comparison_period.label == "2025年5月"
 
 
 # ==================== LLM fallback ====================

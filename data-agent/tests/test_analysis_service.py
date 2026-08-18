@@ -599,6 +599,41 @@ def test_attribution_done_is_last_event():
         assert events[-1]["type"] == "done"
 
 
+def test_report_generation_failed_error_and_done():
+    """deterministic report 失败 → error(REPORT_GENERATION_FAILED, fatal=true)
+    → done(failed, has_report=false)，done 唯一且为最后一个事件。"""
+    graph_state = {
+        "status": AnalysisStatus.failed,
+        "query_action_count": 3,
+        "report": None,
+        "failure_reason": "归因报告生成失败",
+    }
+    events = _collect(
+        _service(
+            None,
+            _attribution_router(),
+            graph_events=[{"type": "report_failed"}],
+            graph_state=graph_state,
+        ),
+        query="为什么2025年2月销售额较1月下降？",
+    )
+    errors = [e for e in events if e["type"] == "error"]
+    assert len(errors) == 1
+    assert errors[0]["code"] == "REPORT_GENERATION_FAILED"
+    assert errors[0]["fatal"] is True
+    # 安全：不泄露异常/路径/凭证
+    message = errors[0]["message"]
+    assert "password" not in message
+    assert "traceback" not in message.lower()
+
+    done = [e for e in events if e["type"] == "done"]
+    assert len(done) == 1
+    assert done[0] == events[-1]  # done 是最后一个事件且只出现一次
+    assert done[0]["status"] == "failed"
+    assert done[0]["has_report"] is False
+    assert done[0]["status"] != "completed"  # 不伪装 completed
+
+
 # ==================== 公共字段 ====================
 
 def test_all_events_have_type_and_analysis_id():

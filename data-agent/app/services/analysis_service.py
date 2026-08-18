@@ -241,6 +241,16 @@ class AnalysisService:
                     yield self._report_event(analysis_id, event)
                     for ev in tracker.close_success():
                         yield ev
+                elif etype == "report_failed":
+                    # deterministic report 生成失败：安全错误 + done(failed, has_report=false)
+                    for ev in tracker.close_failed():
+                        yield ev
+                    yield self._error_event(
+                        analysis_id,
+                        _CODE_REPORT_GENERATION_FAILED,
+                        phase="report_generation",
+                        fatal=True,
+                    )
 
             yield self._attribution_done_event(analysis_id, state)
         except Exception as e:

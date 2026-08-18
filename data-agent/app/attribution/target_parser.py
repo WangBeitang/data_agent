@@ -82,10 +82,16 @@ _METRIC_RULES: tuple[tuple[str, MetricKey], ...] = (
 _QUANTITY_TERMS = ("数量", "件数", "件量", "销量")
 _AMOUNT_TERMS = ("销售额", "销售金额", "销售收入", "金额")
 
-# 显式对比期表达
+# 显式对比期表达（无年份，只给月份）：未写比较年份时沿用本期年份，
+# 比较月大于本期月时跨年前推（如"2025年1月较12月"→ 2024-12）
 _COMPARISON_PATTERNS = (
     r"(?:较|比|对比|与|相较|相对|环比)\s*(\d{1,2})\s*月",
     r"(\d{1,2})\s*月\s*(?:较|比|对比|与|相较|相对|环比)",
+)
+
+# 显式完整比较期间（带年份，优先于无年份规则）："较 2024 年 6 月"
+_EXPLICIT_COMPARISON_PATTERN = re.compile(
+    r"(?:较|比|对比|与|相较|相对|环比)\s*(\d{4})\s*年\s*(\d{1,2})\s*月"
 )
 
 # 主期间（带年份的月份）模式
@@ -111,7 +117,15 @@ class TargetParser:
     # ==================== 公共入口 ====================
 
     def parse(self, query: str) -> AttributionTarget | None:
-        """返回 AttributionTarget；无法可靠确定指标/本期/对比期 → None。"""
+        """返回 AttributionTarget；无法可靠确定指标/本期/对比期 → None。
+
+        命中不支持经营词（成本/利润/库存/生产/产能/设备/质量等）时硬拒绝，
+        直接返回 None，不得继续调用 LLM。
+        """
+        if any(term in query for term in _UNSUPPORTED_TERMS):
+            logger.warning("问题包含不支持的经营维度/指标，拒绝解析（不调用 LLM）")
+            return None
+
         target = self._parse_by_rule(query)
         if target is not None:
             return target
@@ -156,21 +170,42 @@ class TargetParser:
     def _parse_periods(self, query: str) -> tuple[Period, Period] | None:
         """解析本期与对比期。
 
-        规则：
+        规则（优先级从高到低）：
         - 带年份的月份作为本期（问题中第一个 "XXXX年X月"）；
-        - 显式 "较X月 / 比X月 / 环比X月" 作为对比期（未写年份时沿用本期年份，
-          若对比月大于本期月则视为上一年）；
+        - 显式完整比较期间（"较 2024 年 6 月"）优先使用显式年份；
+        - 未给出比较年份时："较X月 / 比X月" 沿用本期年份，
+          比较月大于本期月则视为上一年（跨年前推）；
         - 无显式对比期 → 本期前一个月。
         """
-        matches = _YEAR_MONTH_PATTERN.findall(query)
-        if not matches:
+        year_month_matches = list(_YEAR_MONTH_PATTERN.finditer(query))
+        if not year_month_matches:
             return None
-        year = int(matches[0][0])
-        month = int(matches[0][1])
+        explicit = _EXPLICIT_COMPARISON_PATTERN.search(query)
+        # 本期默认取第一个 "XXXX年X月"；若该匹配落在显式比较表达内部
+        # （如"较 2024 年 6 月"先于本期出现），则本期取下一个带年份月份
+        current_match = year_month_matches[0]
+        if (
+            explicit is not None
+            and explicit.start() < current_match.start() < explicit.end()
+            and len(year_month_matches) > 1
+        ):
+            current_match = year_month_matches[1]
+        year = int(current_match.group(1))
+        month = int(current_match.group(2))
         if not 1 <= month <= 12:
             return None
         current_period = _make_period(year, month)
 
+        # 1. 显式完整比较期间（带年份）：必须优先使用显式年份
+        if explicit is not None:
+            comparison_year = int(explicit.group(1))
+            comparison_month = int(explicit.group(2))
+            if not 1 <= comparison_month <= 12:
+                return None
+            comparison_period = _make_period(comparison_year, comparison_month)
+            return current_period, comparison_period
+
+        # 2. 无年份比较月份：沿用本期年份（跨年回退）
         comparison_month: int | None = None
         for pattern in _COMPARISON_PATTERNS:
             m = re.search(pattern, query)

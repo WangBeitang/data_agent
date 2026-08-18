@@ -108,11 +108,19 @@ class Planner:
 
     # ==================== LLM 决策 ====================
 
-    def plan(self, state_view: dict, feedback: str | None = None) -> Action | None:
+    def plan(
+        self,
+        state_view: dict,
+        feedback: str | None = None,
+        validator=None,
+    ) -> Action | None:
         """LLM 生成单个 Action；非法时反馈重试一次；仍非法返回 None。
 
         - state_view：受限输入视图（由调用方构造，不得包含 SQL/凭证）；
         - feedback：上一次校验失败的简洁错误说明（可为 None）；
+        - validator：可选的状态校验回调（Action -> ActionValidation），
+          schema/Pydantic 非法与 Router 状态非法共享同一个 retry budget：
+          一次 plan 决策周期最多调用 LLM max_attempts（默认 2）次；
         - 返回 None 表示 LLM 连续非法，调用方应进入确定性 fallback。
 
         确定性短路：剩余查询次数不足（≤1）且正常 finish 条件已满足时，
@@ -131,6 +139,12 @@ class Planner:
             except Exception as e:  # LLM 调用异常也视为一次失败
                 logger.warning(f"Planner LLM 调用异常 attempt={attempt} error={e!r}")
                 action, error = None, "LLM 调用异常，请重新输出合法的 Action JSON"
+            # Router 状态非法与 schema 非法共享 budget：validator 拒绝即本次尝试失败
+            if action is not None and validator is not None:
+                validation = validator(action)
+                if not validation.ok:
+                    action = None
+                    error = validation.error_message or "Action 未通过状态校验"
             if action is not None:
                 return action
             logger.warning(f"Planner 输出非法 attempt={attempt}：{error}")
@@ -193,7 +207,7 @@ class Planner:
         if llm_action.type == ActionType.calculate_contribution:
             return None, "calculate_contribution 由系统自动处理，请选择查询动作或 finish_analysis"
 
-        error = self._validate_structure(llm_action)
+        error = self._validate_structure(llm_action, state_view)
         if error is not None:
             return None, error
 
@@ -205,11 +219,13 @@ class Planner:
         return action, ""
 
     @staticmethod
-    def _validate_structure(llm_action: _LLMAction) -> str | None:
+    def _validate_structure(llm_action: _LLMAction, state_view: dict) -> str | None:
         """type 与 dimension/metrics 的结构一致性校验。
 
-        compare_period / breakdown_* 允许 metrics 为空（_to_action 默认
-        沿用 target.metrics）；analyze_unit_price 指标由系统固定。
+        - compare_period / breakdown_* 允许 metrics 为空（_to_action 默认
+          沿用 target.metrics）；analyze_unit_price 指标由系统固定；
+        - 指标硬校验：除 analyze_unit_price 系统固定指标外，Planner 不得
+          把 AttributionTarget 之外的其它业务指标加入 Action。
         """
         t = llm_action.type
         dim = llm_action.dimension
@@ -241,6 +257,18 @@ class Planner:
         elif t == ActionType.finish_analysis:
             if dim is not None or llm_action.metrics:
                 return "finish_analysis 不携带指标与维度"
+
+        # 指标硬校验（analyze_unit_price 为系统固定指标、finish 不携带指标）
+        if t not in (ActionType.analyze_unit_price, ActionType.finish_analysis):
+            allowed = {metric for metric in state_view["target"].metrics}
+            for metric in llm_action.metrics:
+                if metric not in allowed:
+                    allowed_text = "、".join(sorted(m.value for m in allowed))
+                    return (
+                        f"指标 {metric.value} 不在归因目标范围内（允许：{allowed_text}），"
+                        "只能使用归因目标指标"
+                    )
+
         filter_error = validate_filters(llm_action.filters)
         if filter_error is not None:
             return filter_error

@@ -35,9 +35,10 @@ LLM 报告失败：不丢弃已有 Evidence → 确定性模板报告；
 """
 
 import json
+import re
 from dataclasses import dataclass, field
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.agent import llm as llm_module
 from app.attribution.action_router import DIMENSION_DISPLAY_NAMES, METRIC_DISPLAY_NAMES
@@ -82,11 +83,17 @@ class _Assembled:
 
 
 class _LLMRecommendation(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     factor_title: str
     text: str
 
 
 class _LLMReport(BaseModel):
+    """LLM 报告语言组织输出校验模型（extra=forbid 拒绝额外字段）。"""
+
+    model_config = ConfigDict(extra="forbid")
+
     question_definition: str
     core_conclusion: str
     factor_summaries: dict[str, str] = Field(default_factory=dict)
@@ -252,7 +259,8 @@ class ReportGenerator:
     def _try_llm_report(self, state: AttributionState, assembled: _Assembled) -> AttributionReport | None:
         """LLM 生成 question_definition / core_conclusion / summary / recommendations。
 
-        任何异常或校验失败 → 返回 None（调用方走确定性模板）。
+        任何异常、结构校验失败或数值事实守卫失败 → 返回 None（调用方走
+        确定性模板，不尝试修正 LLM 的新数字）。
         """
         if not assembled.evidence_ids:
             # 无有效 Evidence：不调用 LLM（避免编造），直接走模板
@@ -266,6 +274,12 @@ class ReportGenerator:
             logger.warning(f"Report LLM 调用/解析失败 error={e!r}")
             return None
         if llm_report is None:
+            return None
+        # 数值事实守卫：LLM 文案不得出现 Evidence / Calculation / 原问题 /
+        # 目标期间中不存在的新数值；出现即判该次 LLM Report 非法（不修正）。
+        allowed = _collect_allowed_numbers(state)
+        if not self._numbers_within(allowed, _llm_report_texts(llm_report)):
+            logger.warning("Report LLM 文案包含证据外新数字，判定非法，使用确定性模板")
             return None
         return self._apply_llm(state, assembled, llm_report)
 
@@ -289,6 +303,20 @@ class ReportGenerator:
             return _LLMReport(**data)
         except Exception:
             return None
+
+    @staticmethod
+    def _numbers_within(allowed: set, texts: list[str]) -> bool:
+        """texts 中出现的所有数字都必须属于 allowed 集合。
+
+        以绝对值归一化比较（允许 LLM 用「减少29021.5」表述 calc 的 -29021.5）；
+        出现证据中不存在的量级（如把 0.2662 写成 26.62）仍判非法。
+        """
+        allowed_values = {abs(float(v)) for v in allowed}
+        for text in texts:
+            for raw in re.findall(r"-?\d+(?:\.\d+)?", text):
+                if abs(float(raw)) not in allowed_values:
+                    return False
+        return True
 
     @staticmethod
     def _apply_llm(
@@ -449,3 +477,49 @@ def _template_factor_summary(factor: FactorItem) -> str:
     if factor.delta is not None:
         return f"{factor.member}的{DIMENSION_DISPLAY_NAMES[factor.dimension]}{METRIC_DISPLAY_NAMES[factor.metric]}变化{factor.delta}{rate}。"
     return f"{factor.member}的{DIMENSION_DISPLAY_NAMES[factor.dimension]}拆解事实已记录。"
+
+
+# ==================== 数值事实守卫（第一版最小实现，不做复杂核验） ====================
+
+
+def _collect_allowed_numbers(state: AttributionState) -> set:
+    """收集 Evidence / Calculation / 原问题 / 目标期间中允许出现的数字集合。
+
+    作为 LLM 文案数值事实守卫的允许白名单（float 归一化比较）。
+    """
+    numbers: set = set()
+
+    def _collect(value) -> None:
+        if value is None or isinstance(value, bool):
+            return
+        if isinstance(value, (int, float)):
+            numbers.add(value)
+        elif isinstance(value, str):
+            for raw in re.findall(r"-?\d+(?:\.\d+)?", value):
+                numbers.add(float(raw))
+        elif isinstance(value, dict):
+            for item in value.values():
+                _collect(item)
+        elif isinstance(value, (list, tuple)):
+            for item in value:
+                _collect(item)
+
+    _collect(state["question"])
+    target = state["target"]
+    for period in (target.current_period, target.comparison_period):
+        _collect(period.label)
+        _collect(period.start_date.isoformat())
+        _collect(period.end_date.isoformat())
+    for calc in state["calculations"]:
+        _collect(calc.model_dump())
+    for evidence in state["evidences"]:
+        _collect(evidence.model_dump())
+    return numbers
+
+
+def _llm_report_texts(llm_report: _LLMReport) -> list[str]:
+    """LLM 报告输出中需要做数值事实守卫的文本。"""
+    texts = [llm_report.question_definition, llm_report.core_conclusion]
+    texts.extend(llm_report.factor_summaries.values())
+    texts.extend(rec.text for rec in llm_report.recommendations)
+    return texts

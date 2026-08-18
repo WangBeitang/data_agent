@@ -172,10 +172,16 @@ class AttributionGraph:
 
             # Action 合法：记录并广播 action_start
             state["actions"].append(action)
+            # 正式 SSE 语义：查询 Action 的 query_action_count 必须包含当前
+            # 已开始 Action（第一个=1、第六个=6）；本地 Action 不增加计数。
+            # state 自增位置保持不变（真正开始查询时才 +1）。
+            started_count = state["query_action_count"] + (
+                1 if is_query_action(action.type) else 0
+            )
             yield {
                 "type": "action_start",
                 "action": action,
-                "query_action_count": state["query_action_count"],
+                "query_action_count": started_count,
                 "max_query_actions": state["max_query_actions"],
             }
 
@@ -231,8 +237,13 @@ class AttributionGraph:
                 try:
                     report = self._report_generator.generate(state)
                 except Exception as e:
+                    # deterministic report 也失败 → REPORT_GENERATION_FAILED
                     logger.error(f"归因报告确定性生成失败：{e!r}")
-                    report = None
+                    state["status"] = AnalysisStatus.failed
+                    state["failure_reason"] = "归因报告生成失败"
+                    state["report"] = None
+                    yield {"type": "report_failed"}
+                    return
                 state["report"] = report
                 if report is not None:
                     yield {
@@ -247,21 +258,21 @@ class AttributionGraph:
     def _plan_next(self, state: AttributionState) -> Action | None:
         """Planner 决策 + 校验反馈重试；仍失败进入确定性 fallback。
 
+        retry 契约：schema/Pydantic 非法与 Router 状态非法共享同一个
+        retry budget——一次 plan_next 决策周期最多调用 Planner LLM
+        max_attempts（默认 2）次，不存在 2+2 嵌套。
+
         返回 None 表示动作路线耗尽（调用方受控结束）。
         """
         view = self._build_view(state)
 
-        # 1. LLM 决策；Router 状态校验拒绝时反馈重试一次
-        action = self._planner.plan(view)
+        # 1. LLM 决策（validator 回调在 plan 内部共享 retry budget）
+        action = self._planner.plan(
+            view,
+            validator=lambda candidate: self._validate(state, candidate),
+        )
         if action is not None:
-            validation = self._validate(state, action)
-            if validation.ok:
-                return action
-            action = self._planner.plan(view, feedback=validation.error_message)
-            if action is not None:
-                validation = self._validate(state, action)
-                if validation.ok:
-                    return action
+            return action
 
         # 2. 确定性 fallback（跳过已执行/已尝试；仍经过 Action Router）
         while True:
@@ -377,7 +388,7 @@ class AttributionGraph:
                         total_calc.delta,
                         calculation_id=(
                             f"c_{CalculationType.contribution.value}_{metric.value}_"
-                            f"{action.dimension.value}"
+                            f"{action.dimension.value}_{observation.observation_id}"
                         ),
                     )
                 except Exception as e:
@@ -424,7 +435,7 @@ class AttributionGraph:
                         total_calc.delta,
                         calculation_id=(
                             f"c_{CalculationType.contribution.value}_{metric.value}_"
-                            f"{obs.dimension.value}"
+                            f"{obs.dimension.value}_{obs.observation_id}"
                         ),
                     )
                 except Exception as e:
@@ -500,7 +511,11 @@ class AttributionGraph:
     # ==================== generate_report 节点（强制停止 / 路线耗尽） ====================
 
     def _finish_with_report(self, state: AttributionState, *, reason: str) -> list[dict]:
-        """受控结束：根据已有 Evidence 决定 partial / failed 并尽量生成报告。"""
+        """受控结束：根据已有 Evidence 决定 partial / failed 并尽量生成报告。
+
+        deterministic report 本身也抛异常时 → 状态置 failed 并返回
+        report_failed 内部事件（调用方映射 REPORT_GENERATION_FAILED）。
+        """
         has_evidence = has_valid_evidence(state["evidences"], state["observations"])
         state["status"] = AnalysisStatus.partial if has_evidence else AnalysisStatus.failed
         state["failure_reason"] = reason
@@ -508,7 +523,10 @@ class AttributionGraph:
             report = self._report_generator.generate(state)
         except Exception as e:
             logger.error(f"归因报告确定性生成失败：{e!r}")
-            report = None
+            state["status"] = AnalysisStatus.failed
+            state["failure_reason"] = "归因报告生成失败"
+            state["report"] = None
+            return [{"type": "report_failed"}]
         state["report"] = report
         if report is not None:
             return [
