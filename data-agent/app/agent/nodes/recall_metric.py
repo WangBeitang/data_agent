@@ -18,7 +18,7 @@ from app.prompt.prompt_loader import load_prompt
 4. 返回字段信息列表： list[MetricInfoQdrant]
 """
 async def recall_metric(state: DataAgentState, runtime: Runtime[DataAgentContext]):
-    runtime.stream_writer({"stage": "召回指标"})
+    runtime.stream_writer({"stage": "召回指标", "stage_code": "query_retrieval"})
     query = state["query"]
     keywords = state["keywords"]
     embedding_client = runtime.context["embedding_client"]

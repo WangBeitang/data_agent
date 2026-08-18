@@ -12,7 +12,7 @@ from app.prompt.prompt_loader import load_prompt
 
 # 利用大模型对table_infos进行过滤生成：{表名：[字段名1， 字段名2]}
 async def filter_table(state: DataAgentState, runtime: Runtime[DataAgentContext]):
-    runtime.stream_writer({"stage": "过滤表"})
+    runtime.stream_writer({"stage": "过滤表", "stage_code": "query_retrieval"})
     try:
         query = state["query"]
         table_infos = state["table_infos"]

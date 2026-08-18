@@ -11,7 +11,7 @@ from app.prompt.prompt_loader import load_prompt
 
 
 async def correct_sql(state: DataAgentState, runtime: Runtime[DataAgentContext]):
-    runtime.stream_writer({"stage": "校正SQL"})
+    runtime.stream_writer({"stage": "校正SQL", "stage_code": "sql_validation"})
     try:
         query = state["query"]
         table_infos = state["table_infos"]

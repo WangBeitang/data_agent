@@ -17,7 +17,7 @@ from app.prompt.prompt_loader import load_prompt
 4. 返回字段信息列表： list[ColumnInfoQdrant]
 """
 async def recall_column(state: DataAgentState, runtime: Runtime[DataAgentContext]):
-    runtime.stream_writer({"stage": "召回字段"})
+    runtime.stream_writer({"stage": "召回字段", "stage_code": "query_retrieval"})
     query = state["query"]
     keywords = state["keywords"]
     embedding_client = runtime.context["embedding_client"]

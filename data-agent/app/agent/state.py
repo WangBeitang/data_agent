@@ -1,4 +1,4 @@
-from typing import TypedDict
+from typing import NotRequired, TypedDict
 
 from app.models.es.value_info_es import ValueInfoES
 from app.models.qdrant.column_info_qdrant import ColumnInfoQdrant
@@ -48,3 +48,7 @@ class DataAgentState(TypedDict):
     metric_infos: list[MetricInfoState] # 指标信息状态对象列表
     date_info: DateInfoState # 当前日期时间信息状态对象
     db_info: DBInfoState # 数据库信息状态对象
+    # ---- Stage 2 最小新增（结构化执行边界） ----
+    result_contract: NotRequired[dict | None] # 归因子查询结果结构契约；普通问数为 None
+    result_columns: NotRequired[list[str]] # 最终 SQL 查询结果列名
+    result_rows: NotRequired[list[dict]] # 最终 SQL 查询结果行数据

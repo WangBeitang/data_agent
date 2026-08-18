@@ -11,7 +11,7 @@ from app.models.qdrant.metric_info_qdrant import MetricInfoQdrant
 
 
 async def merge_retrieved_info(state:DataAgentState, runtime: Runtime[DataAgentContext]):
-    runtime.stream_writer({"stage": "合并召回"})
+    runtime.stream_writer({"stage": "合并召回", "stage_code": "query_retrieval"})
     # 取出相关的数据
     recall_columns: list[ColumnInfoQdrant] = state["recall_columns"]
     recall_metrics: list[MetricInfoQdrant] = state["recall_metrics"]

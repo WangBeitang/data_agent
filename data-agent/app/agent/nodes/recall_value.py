@@ -19,7 +19,7 @@ from app.prompt.prompt_loader import load_prompt
 4. 返回字段信息列表： list[ColumnInfoQdrant]
 """
 async def recall_value(state: DataAgentState, runtime: Runtime[DataAgentContext]):
-    runtime.stream_writer({"stage": "召回字段值"})
+    runtime.stream_writer({"stage": "召回字段值", "stage_code": "query_retrieval"})
     query = state["query"]
     keywords = state["keywords"]
     value_es_repo = runtime.context["value_es_repo"]

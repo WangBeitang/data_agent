@@ -35,10 +35,21 @@ class DWMysqlRepository:
         await self.session.execute(text(f"explain {sql}"))
 
     async def execute_sql(self, sql):
-        """执行一条查询的SQL"""
+        """执行一条查询的SQL（兼容旧调用，仅返回行数据）"""
         result = await self.session.execute(text(sql))
         # return result.mappings().all()   #rowMapping对象  不能直接序列化
         return [dict(row) for row in result.mappings().all()]  # 转换为了字典的数组 =》方便序列化为json字符串
+
+    async def execute_query(self, sql) -> tuple[list[str], list[dict]]:
+        """结构化执行一条查询SQL，返回 (columns, rows)。
+
+        - columns：使用 result.keys() 取得，SQL 返回 0 行时仍能取得列名；
+        - rows：使用 result.mappings().all() 取得并转换为 dict 列表。
+        """
+        result = await self.session.execute(text(sql))
+        columns = list(result.keys())
+        rows = [dict(row) for row in result.mappings().all()]
+        return columns, rows
 
     """
     序列化：将某种语言的对象或数组转为特定格式的字符串（json/yaml）

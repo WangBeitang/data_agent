@@ -9,7 +9,7 @@ from app.core.log import logger
 利用Jiaba对提问进行一个基本非语义分词，可能会丢失语义的词，需要后面的节点对提问进行语义分词补充
 """
 def extract_keywords(state: DataAgentState, runtime: Runtime[DataAgentContext]):
-    runtime.stream_writer({"stage": "提取关键字"})
+    runtime.stream_writer({"stage": "提取关键字", "stage_code": "query_retrieval"})
 
     # 得到提问
     query = state["query"]
