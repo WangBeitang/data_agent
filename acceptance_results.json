@@ -1,54 +1,591 @@
-[
-  {
-    "query": "统计2025年各月销售额",
-    "idx": 3,
-    "loadingStarted": true,
-    "loadingFinished": true,
-    "routeBadge": [
-      "普通问数"
-    ],
-    "hasReport": false,
-    "hasTimeline": true,
-    "actionCount": 0,
-    "queryBlockCount": 0,
-    "sqlCount": 0,
-    "resultTableCount": 1,
-    "hasContribution": false,
-    "evidenceCount": 0,
-    "hasCopy": false,
-    "hasDataBoundary": false,
-    "forbiddenFound": [],
-    "consoleForbidden": [],
-    "consoleErrors": [],
-    "pageErrors": [],
-    "bodyTextLen": 215,
-    "shot": "/Users/beitang/Desktop/项目实战/data_agent/acceptance_scenario_3.png",
-    "bodyText": "制造业销售经营归因分析工作台\n普通问数 / 经营归因 · 数据归因，结论可追溯到 SQL 与确定性计算\n统计2025年各月销售额\n为什么2025年2月销售额较1月明显下降？\n为什么2025年3月销售数量大幅增长，但销售额增长有限？\n统计2025年各月销售额\n🧑\n🤖\n普通问数\n提取关键字\n完成\n生成SQL\n完成\n校验SQL\n完成\n执行SQL\n完成\nmonth\t销售额\n1\t109030.5\n2\t80009\n3\t90120\n发送"
-  },
-  {
-    "query": "为什么2025年2月销售额较1月明显下降？",
-    "idx": 1,
-    "doneEvent": null,
-    "capturedEventTypeCounts": {
-      "route": 1,
-      "stage": 2
+{
+  "generated_by": "Stage 7 真实 API/SSE 验收（POST /api/query）",
+  "note": "本文件替代早期浏览器脚手架 acceptance_results.json（NETWORK_ERROR），以真实后端验收结果重新生成，避免与最终报告矛盾。",
+  "runs": [
+    {
+      "file": "normal_1.json",
+      "mode": "query",
+      "done_status": "completed",
+      "query_count": 1,
+      "n_action_start": 0,
+      "n_query_result": 1,
+      "n_calculation": 0,
+      "n_report": 0,
+      "n_error": 0,
+      "event_types": [
+        "done",
+        "query_result",
+        "route",
+        "stage"
+      ],
+      "has_report": false,
+      "metric_overview": [],
+      "drivers": [],
+      "forbidden_hits": 0
     },
-    "routeBadge": [],
-    "hasReport": false,
-    "hasTimeline": false,
-    "actionCount": 0,
-    "queryBlockCount": 0,
-    "sqlCount": 0,
-    "resultTableCount": 0,
-    "hasContribution": false,
-    "evidenceCount": 0,
-    "hasCopy": false,
-    "forbiddenFound": [],
-    "consoleForbidden": [],
-    "consoleErrors": [],
-    "pageErrors": [],
-    "bodyTextLen": 233,
-    "shot": "/Users/beitang/Desktop/项目实战/data_agent/acceptance_scenario_1.png",
-    "bodyText": "制造业销售经营归因分析工作台\n普通问数 / 经营归因 · 数据归因，结论可追溯到 SQL 与确定性计算\n统计2025年各月销售额\n为什么2025年2月销售额较1月明显下降？\n为什么2025年3月销售数量大幅增长，但销售额增长有限？\n为什么2025年2月销售额较1月明显下降？\n🧑\n🤖\n[NETWORK_ERROR]\nFailed to execute 'clone' on 'Response': Response body is already used\n发送"
-  }
-]
+    {
+      "file": "normal_2.json",
+      "mode": "query",
+      "done_status": "completed",
+      "query_count": 1,
+      "n_action_start": 0,
+      "n_query_result": 1,
+      "n_calculation": 0,
+      "n_report": 0,
+      "n_error": 0,
+      "event_types": [
+        "done",
+        "query_result",
+        "route",
+        "stage"
+      ],
+      "has_report": false,
+      "metric_overview": [],
+      "drivers": [],
+      "forbidden_hits": 0
+    },
+    {
+      "file": "normal_3.json",
+      "mode": "query",
+      "done_status": "completed",
+      "query_count": 1,
+      "n_action_start": 0,
+      "n_query_result": 1,
+      "n_calculation": 0,
+      "n_report": 0,
+      "n_error": 0,
+      "event_types": [
+        "done",
+        "query_result",
+        "route",
+        "stage"
+      ],
+      "has_report": false,
+      "metric_overview": [],
+      "drivers": [],
+      "forbidden_hits": 0
+    },
+    {
+      "file": "normal_4.json",
+      "mode": "query",
+      "done_status": "completed",
+      "query_count": 1,
+      "n_action_start": 0,
+      "n_query_result": 1,
+      "n_calculation": 0,
+      "n_report": 0,
+      "n_error": 0,
+      "event_types": [
+        "done",
+        "query_result",
+        "route",
+        "stage"
+      ],
+      "has_report": false,
+      "metric_overview": [],
+      "drivers": [],
+      "forbidden_hits": 0
+    },
+    {
+      "file": "normal_5.json",
+      "mode": "query",
+      "done_status": "completed",
+      "query_count": 1,
+      "n_action_start": 0,
+      "n_query_result": 1,
+      "n_calculation": 0,
+      "n_report": 0,
+      "n_error": 0,
+      "event_types": [
+        "done",
+        "query_result",
+        "route",
+        "stage"
+      ],
+      "has_report": false,
+      "metric_overview": [],
+      "drivers": [],
+      "forbidden_hits": 0
+    },
+    {
+      "file": "scenario1_run1.json",
+      "mode": "attribution",
+      "done_status": "completed",
+      "query_count": 5,
+      "n_action_start": 6,
+      "n_query_result": 5,
+      "n_calculation": 5,
+      "n_report": 1,
+      "n_error": 0,
+      "event_types": [
+        "action_start",
+        "calculation",
+        "done",
+        "query_result",
+        "report",
+        "route",
+        "stage"
+      ],
+      "has_report": true,
+      "metric_overview": [
+        {
+          "metric": "sales_amount",
+          "current_period_label": "2025年2月",
+          "current_value": 80009.0,
+          "comparison_period_label": "2025年1月",
+          "comparison_value": 109030.5,
+          "delta": -29021.5,
+          "change_rate": -0.2662,
+          "evidence_ids": [
+            "ev1"
+          ]
+        }
+      ],
+      "drivers": [
+        {
+          "title": "华东的销售区域贡献",
+          "metric": "sales_amount",
+          "dimension": "region",
+          "member": "华东",
+          "delta": -37416.0,
+          "contribution_rate": 1.2893,
+          "summary": "华东的销售区域销售额变化-37416.0，贡献率约1.2893。",
+          "evidence_ids": [
+            "ev2_1"
+          ]
+        },
+        {
+          "title": "手机数码的产品类别贡献",
+          "metric": "sales_amount",
+          "dimension": "category",
+          "member": "手机数码",
+          "delta": -24997.0,
+          "contribution_rate": 0.8613,
+          "summary": "手机数码的产品类别销售额变化-24997.0，贡献率约0.8613。",
+          "evidence_ids": [
+            "ev7_3"
+          ]
+        },
+        {
+          "title": "iPhone 15 Pro的产品贡献",
+          "metric": "sales_amount",
+          "dimension": "product",
+          "member": "iPhone 15 Pro",
+          "delta": -17998.0,
+          "contribution_rate": 0.6202,
+          "summary": "iPhone 15 Pro的产品销售额变化-17998.0，贡献率约0.6202。",
+          "evidence_ids": [
+            "ev13_5"
+          ]
+        }
+      ],
+      "forbidden_hits": 0
+    },
+    {
+      "file": "scenario1_run2.json",
+      "mode": "attribution",
+      "done_status": "completed",
+      "query_count": 5,
+      "n_action_start": 6,
+      "n_query_result": 5,
+      "n_calculation": 5,
+      "n_report": 1,
+      "n_error": 0,
+      "event_types": [
+        "action_start",
+        "calculation",
+        "done",
+        "query_result",
+        "report",
+        "route",
+        "stage"
+      ],
+      "has_report": true,
+      "metric_overview": [
+        {
+          "metric": "sales_amount",
+          "current_period_label": "2025年2月",
+          "current_value": 80009.0,
+          "comparison_period_label": "2025年1月",
+          "comparison_value": 109030.5,
+          "delta": -29021.5,
+          "change_rate": -0.2662,
+          "evidence_ids": [
+            "ev1"
+          ]
+        }
+      ],
+      "drivers": [
+        {
+          "title": "华东的销售区域贡献",
+          "metric": "sales_amount",
+          "dimension": "region",
+          "member": "华东",
+          "delta": -37416.0,
+          "contribution_rate": 1.2893,
+          "summary": "华东的销售区域销售额变化-37416.0，贡献率约1.2893。",
+          "evidence_ids": [
+            "ev2_1"
+          ]
+        },
+        {
+          "title": "手机数码的产品类别贡献",
+          "metric": "sales_amount",
+          "dimension": "category",
+          "member": "手机数码",
+          "delta": -24997.0,
+          "contribution_rate": 0.8613,
+          "summary": "手机数码的产品类别销售额变化-24997.0，贡献率约0.8613。",
+          "evidence_ids": [
+            "ev7_3"
+          ]
+        },
+        {
+          "title": "白银的客户贡献",
+          "metric": "sales_amount",
+          "dimension": "customer",
+          "member": "白银",
+          "delta": -22463.0,
+          "contribution_rate": 0.774,
+          "summary": "白银的客户销售额变化-22463.0，贡献率约0.774。",
+          "evidence_ids": [
+            "ev20_1"
+          ]
+        }
+      ],
+      "forbidden_hits": 0
+    },
+    {
+      "file": "scenario1_run3.json",
+      "mode": "attribution",
+      "done_status": "completed",
+      "query_count": 5,
+      "n_action_start": 6,
+      "n_query_result": 5,
+      "n_calculation": 5,
+      "n_report": 1,
+      "n_error": 0,
+      "event_types": [
+        "action_start",
+        "calculation",
+        "done",
+        "query_result",
+        "report",
+        "route",
+        "stage"
+      ],
+      "has_report": true,
+      "metric_overview": [
+        {
+          "metric": "sales_amount",
+          "current_period_label": "2025年2月",
+          "current_value": 80009.0,
+          "comparison_period_label": "2025年1月",
+          "comparison_value": 109030.5,
+          "delta": -29021.5,
+          "change_rate": -0.2662,
+          "evidence_ids": [
+            "ev1"
+          ]
+        }
+      ],
+      "drivers": [
+        {
+          "title": "华东的销售区域贡献",
+          "metric": "sales_amount",
+          "dimension": "region",
+          "member": "华东",
+          "delta": -37416.0,
+          "contribution_rate": 1.2893,
+          "summary": "华东的销售区域销售额变化-37416.0，贡献率约1.2893。",
+          "evidence_ids": [
+            "ev2_1"
+          ]
+        },
+        {
+          "title": "手机数码的产品类别贡献",
+          "metric": "sales_amount",
+          "dimension": "category",
+          "member": "手机数码",
+          "delta": -24997.0,
+          "contribution_rate": 0.8613,
+          "summary": "手机数码的产品类别销售额变化-24997.0，贡献率约0.8613。",
+          "evidence_ids": [
+            "ev7_3"
+          ]
+        },
+        {
+          "title": "白银的客户贡献",
+          "metric": "sales_amount",
+          "dimension": "customer",
+          "member": "白银",
+          "delta": -22463.0,
+          "contribution_rate": 0.774,
+          "summary": "白银的客户销售额变化-22463.0，贡献率约0.774。",
+          "evidence_ids": [
+            "ev17_1"
+          ]
+        }
+      ],
+      "forbidden_hits": 0
+    },
+    {
+      "file": "scenario2_run1.json",
+      "mode": "attribution",
+      "done_status": "completed",
+      "query_count": 5,
+      "n_action_start": 6,
+      "n_query_result": 5,
+      "n_calculation": 5,
+      "n_report": 1,
+      "n_error": 0,
+      "event_types": [
+        "action_start",
+        "calculation",
+        "done",
+        "query_result",
+        "report",
+        "route",
+        "stage"
+      ],
+      "has_report": true,
+      "metric_overview": [
+        {
+          "metric": "sales_quantity",
+          "current_period_label": "2025年3月",
+          "current_value": 322.0,
+          "comparison_period_label": "2025年2月",
+          "comparison_value": 151.0,
+          "delta": 171.0,
+          "change_rate": 1.1325,
+          "evidence_ids": [
+            "ev1"
+          ]
+        },
+        {
+          "metric": "sales_amount",
+          "current_period_label": "2025年3月",
+          "current_value": 90120.0,
+          "comparison_period_label": "2025年2月",
+          "comparison_value": 80009.0,
+          "delta": 10111.0,
+          "change_rate": 0.1264,
+          "evidence_ids": [
+            "ev2"
+          ]
+        }
+      ],
+      "drivers": [
+        {
+          "title": "华北的销售区域贡献",
+          "metric": "sales_amount",
+          "dimension": "region",
+          "member": "华北",
+          "delta": 19423.5,
+          "contribution_rate": 1.921,
+          "summary": "华北的销售区域销售额变化19423.5，贡献率约1.921。",
+          "evidence_ids": [
+            "ev16_3"
+          ]
+        },
+        {
+          "title": "华东的销售区域贡献",
+          "metric": "sales_amount",
+          "dimension": "region",
+          "member": "华东",
+          "delta": 17433.0,
+          "contribution_rate": 1.7242,
+          "summary": "华东的销售区域销售额变化17433.0，贡献率约1.7242。",
+          "evidence_ids": [
+            "ev16_1"
+          ]
+        },
+        {
+          "title": "手机数码的产品类别贡献",
+          "metric": "sales_amount",
+          "dimension": "category",
+          "member": "手机数码",
+          "delta": 8398.0,
+          "contribution_rate": 0.8306,
+          "summary": "手机数码的产品类别销售额变化8398.0，贡献率约0.8306。",
+          "evidence_ids": [
+            "ev4_3"
+          ]
+        }
+      ],
+      "forbidden_hits": 0
+    },
+    {
+      "file": "scenario2_run2.json",
+      "mode": "attribution",
+      "done_status": "completed",
+      "query_count": 5,
+      "n_action_start": 6,
+      "n_query_result": 5,
+      "n_calculation": 5,
+      "n_report": 1,
+      "n_error": 0,
+      "event_types": [
+        "action_start",
+        "calculation",
+        "done",
+        "query_result",
+        "report",
+        "route",
+        "stage"
+      ],
+      "has_report": true,
+      "metric_overview": [
+        {
+          "metric": "sales_quantity",
+          "current_period_label": "2025年3月",
+          "current_value": 322.0,
+          "comparison_period_label": "2025年2月",
+          "comparison_value": 151.0,
+          "delta": 171.0,
+          "change_rate": 1.1325,
+          "evidence_ids": [
+            "ev1"
+          ]
+        },
+        {
+          "metric": "sales_amount",
+          "current_period_label": "2025年3月",
+          "current_value": 90120.0,
+          "comparison_period_label": "2025年2月",
+          "comparison_value": 80009.0,
+          "delta": 10111.0,
+          "change_rate": 0.1264,
+          "evidence_ids": [
+            "ev2"
+          ]
+        }
+      ],
+      "drivers": [
+        {
+          "title": "华北的销售区域贡献",
+          "metric": "sales_amount",
+          "dimension": "region",
+          "member": "华北",
+          "delta": 19423.5,
+          "contribution_rate": 1.921,
+          "summary": "华北的销售区域销售额变化19423.5，贡献率约1.921。",
+          "evidence_ids": [
+            "ev3_3"
+          ]
+        },
+        {
+          "title": "华东的销售区域贡献",
+          "metric": "sales_amount",
+          "dimension": "region",
+          "member": "华东",
+          "delta": 17433.0,
+          "contribution_rate": 1.7242,
+          "summary": "华东的销售区域销售额变化17433.0，贡献率约1.7242。",
+          "evidence_ids": [
+            "ev3_1"
+          ]
+        },
+        {
+          "title": "手机数码的产品类别贡献",
+          "metric": "sales_amount",
+          "dimension": "category",
+          "member": "手机数码",
+          "delta": 8398.0,
+          "contribution_rate": 0.8306,
+          "summary": "手机数码的产品类别销售额变化8398.0，贡献率约0.8306。",
+          "evidence_ids": [
+            "ev9_3"
+          ]
+        }
+      ],
+      "forbidden_hits": 0
+    },
+    {
+      "file": "scenario2_run3.json",
+      "mode": "attribution",
+      "done_status": "completed",
+      "query_count": 5,
+      "n_action_start": 6,
+      "n_query_result": 5,
+      "n_calculation": 5,
+      "n_report": 1,
+      "n_error": 0,
+      "event_types": [
+        "action_start",
+        "calculation",
+        "done",
+        "query_result",
+        "report",
+        "route",
+        "stage"
+      ],
+      "has_report": true,
+      "metric_overview": [
+        {
+          "metric": "sales_quantity",
+          "current_period_label": "2025年3月",
+          "current_value": 322.0,
+          "comparison_period_label": "2025年2月",
+          "comparison_value": 151.0,
+          "delta": 171.0,
+          "change_rate": 1.1325,
+          "evidence_ids": [
+            "ev1"
+          ]
+        },
+        {
+          "metric": "sales_amount",
+          "current_period_label": "2025年3月",
+          "current_value": 90120.0,
+          "comparison_period_label": "2025年2月",
+          "comparison_value": 80009.0,
+          "delta": 10111.0,
+          "change_rate": 0.1264,
+          "evidence_ids": [
+            "ev2"
+          ]
+        }
+      ],
+      "drivers": [
+        {
+          "title": "华北的销售区域贡献",
+          "metric": "sales_amount",
+          "dimension": "region",
+          "member": "华北",
+          "delta": 19423.5,
+          "contribution_rate": 1.921,
+          "summary": "华北的销售区域销售额变化19423.5，贡献率约1.921。",
+          "evidence_ids": [
+            "ev5_3"
+          ]
+        },
+        {
+          "title": "华东的销售区域贡献",
+          "metric": "sales_amount",
+          "dimension": "region",
+          "member": "华东",
+          "delta": 17433.0,
+          "contribution_rate": 1.7242,
+          "summary": "华东的销售区域销售额变化17433.0，贡献率约1.7242。",
+          "evidence_ids": [
+            "ev5_1"
+          ]
+        },
+        {
+          "title": "手机数码的产品类别贡献",
+          "metric": "sales_amount",
+          "dimension": "category",
+          "member": "手机数码",
+          "delta": 8398.0,
+          "contribution_rate": 0.8306,
+          "summary": "手机数码的产品类别销售额变化8398.0，贡献率约0.8306。",
+          "evidence_ids": [
+            "ev15_3"
+          ]
+        }
+      ],
+      "forbidden_hits": 0
+    }
+  ]
+}
