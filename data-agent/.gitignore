@@ -11,3 +11,5 @@ wheels/
 /docker_windows/
 /models/
 *.log
+conf/
+app_config.yaml
