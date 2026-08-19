@@ -1,0 +1,54 @@
+[
+  {
+    "query": "统计2025年各月销售额",
+    "idx": 3,
+    "loadingStarted": true,
+    "loadingFinished": true,
+    "routeBadge": [
+      "普通问数"
+    ],
+    "hasReport": false,
+    "hasTimeline": true,
+    "actionCount": 0,
+    "queryBlockCount": 0,
+    "sqlCount": 0,
+    "resultTableCount": 1,
+    "hasContribution": false,
+    "evidenceCount": 0,
+    "hasCopy": false,
+    "hasDataBoundary": false,
+    "forbiddenFound": [],
+    "consoleForbidden": [],
+    "consoleErrors": [],
+    "pageErrors": [],
+    "bodyTextLen": 215,
+    "shot": "/Users/beitang/Desktop/项目实战/data_agent/acceptance_scenario_3.png",
+    "bodyText": "制造业销售经营归因分析工作台\n普通问数 / 经营归因 · 数据归因，结论可追溯到 SQL 与确定性计算\n统计2025年各月销售额\n为什么2025年2月销售额较1月明显下降？\n为什么2025年3月销售数量大幅增长，但销售额增长有限？\n统计2025年各月销售额\n🧑\n🤖\n普通问数\n提取关键字\n完成\n生成SQL\n完成\n校验SQL\n完成\n执行SQL\n完成\nmonth\t销售额\n1\t109030.5\n2\t80009\n3\t90120\n发送"
+  },
+  {
+    "query": "为什么2025年2月销售额较1月明显下降？",
+    "idx": 1,
+    "doneEvent": null,
+    "capturedEventTypeCounts": {
+      "route": 1,
+      "stage": 2
+    },
+    "routeBadge": [],
+    "hasReport": false,
+    "hasTimeline": false,
+    "actionCount": 0,
+    "queryBlockCount": 0,
+    "sqlCount": 0,
+    "resultTableCount": 0,
+    "hasContribution": false,
+    "evidenceCount": 0,
+    "hasCopy": false,
+    "forbiddenFound": [],
+    "consoleForbidden": [],
+    "consoleErrors": [],
+    "pageErrors": [],
+    "bodyTextLen": 233,
+    "shot": "/Users/beitang/Desktop/项目实战/data_agent/acceptance_scenario_1.png",
+    "bodyText": "制造业销售经营归因分析工作台\n普通问数 / 经营归因 · 数据归因，结论可追溯到 SQL 与确定性计算\n统计2025年各月销售额\n为什么2025年2月销售额较1月明显下降？\n为什么2025年3月销售数量大幅增长，但销售额增长有限？\n为什么2025年2月销售额较1月明显下降？\n🧑\n🤖\n[NETWORK_ERROR]\nFailed to execute 'clone' on 'Response': Response body is already used\n发送"
+  }
+]
