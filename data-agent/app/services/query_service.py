@@ -1,12 +1,11 @@
 import json
-from typing import Awaitable, Callable, Optional, Union
+from typing import Awaitable, Callable, Optional
 
 from langchain_core.embeddings import Embeddings
 
 from app.agent.context import DataAgentContext
 from app.agent.graph import graph
 from app.agent.state import DataAgentState
-from app.attribution.normalizer import validate_contract_result
 from app.core.log import logger
 from app.models.analysis import ObservationStatus, QueryExecutionResult, QueryTable
 from app.repositories.es.value_es_repository import ValueESRepository
@@ -14,6 +13,7 @@ from app.repositories.mysql.dw_mysql_repository import DWMysqlRepository
 from app.repositories.mysql.meta_mysql_repository import MetaMysqlRepository
 from app.repositories.qdrant.column_qdrant_repository import ColumnQdrantRepository
 from app.repositories.qdrant.metric_qdrant_repository import MetricQdrantRepository
+from app.services.result_contract import validate_contract_result
 
 # 稳定、安全的用户可见错误信息（详细异常只写服务端日志）
 _SAFE_QUERY_FAILED_MESSAGE = "问数执行失败：无法完成 SQL 生成、校验或执行，请调整问题后重试。"

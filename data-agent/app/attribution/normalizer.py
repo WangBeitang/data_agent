@@ -17,6 +17,10 @@ Action + QueryExecutionResult + result_contract → Observation / normalized_row
 - contract 不匹配（缺 period_key / dimension_value / metric alias，
   或 period value 非法）→ Observation.status=failed，error 使用
   RESULT_NORMALIZATION_FAILED 安全语义；禁止猜测列名兜底。
+
+硬契约守卫 `validate_contract_result`（Stage 7）已下沉到中立纯函数模块
+`app.services.result_contract`，本模块仅做轻量 re-export 以兼容历史导入；
+QueryService 不再依赖 attribution，两套校验共享同一 `PERIOD_WHITELIST` 单一来源。
 """
 
 from app.models.analysis import (
@@ -29,9 +33,10 @@ from app.models.analysis import (
     ObservationStatus,
     QueryExecutionResult,
 )
+from app.services.result_contract import PERIOD_WHITELIST, validate_contract_result
 
-# 冻结的期间键白名单
-_ALLOWED_PERIODS = frozenset({"comparison", "current"})
+# 冻结的期间键白名单（与 result_contract 共享单一来源，避免两套校验漂移）
+_ALLOWED_PERIODS = PERIOD_WHITELIST
 
 # RESULT_NORMALIZATION_FAILED 安全语义前缀（API 接口设计 §13 错误码）
 _RESULT_NORMALIZATION_FAILED = "查询结果归一化失败（RESULT_NORMALIZATION_FAILED）"
@@ -41,79 +46,6 @@ _PROVIDER_FAILED_MESSAGE = "查询执行失败，无法获得有效数据。"
 
 # 非法值哨兵
 _INVALID = object()
-
-
-def validate_contract_result(
-    result_columns: list[str],
-    result_rows: list[dict],
-    result_contract: dict | None,
-) -> str | None:
-    """硬执行契约：检查 SQL 输出列与值是否满足 result_contract（Stage 7）。
-
-    返回失败原因（str）或 None（满足）。本函数与 Normalizer 的严格校验
-    保持同一语义，作为 QueryService / DataAgent Graph 边界的硬契约检查，
-    不调用 LLM、不猜列。
-
-    校验范围（与 Normalizer._validate_contract / _normalize_rows 一致）：
-
-    - 输出列必须满足 period_alias；
-    - breakdown 必须满足 dimension_alias；
-    - 所有 metric_aliases 必须存在；
-    - period_alias 的实际值只能来自 period_values（且 ∈ {comparison, current}）；
-    - breakdown dimension value 必须有效（非空字符串）；
-    - 指标值必须保持可归一化数值语义（int/float，禁止 bool/str/None）；
-    - 维度成员在同一期间不得出现重复行；
-    - 列名缺失 / 值非法即失败，不猜测兜底。
-
-    注意：result_rows 为空但列名符合契约 → 返回 None（空结果是合法 empty，
-    不触发修复）；只有 SQL 语法正确但输出偏离契约才触发内部修复。
-    """
-    if result_contract is None:
-        return None
-
-    if not isinstance(result_contract, dict):
-        return "result_contract 必须是 dict"
-    period_alias = result_contract.get("period_alias")
-    if not period_alias:
-        return "契约缺少 period_alias"
-    metric_aliases = result_contract.get("metric_aliases")
-    if not isinstance(metric_aliases, dict) or not metric_aliases:
-        return "契约缺少 metric_aliases"
-    period_values = result_contract.get("period_values")
-    if not isinstance(period_values, list) or not period_values:
-        return "契约缺少 period_values"
-    dimension_alias = result_contract.get("dimension_alias")
-    need_dimension = dimension_alias is not None
-
-    columns = list(result_columns or [])
-    if period_alias not in columns:
-        return f"结果缺少契约列 {period_alias!r}"
-    if need_dimension and dimension_alias not in columns:
-        return f"结果缺少契约列 {dimension_alias!r}"
-    for alias in metric_aliases.values():
-        if alias not in columns:
-            return f"结果缺少契约列 {alias!r}"
-
-    allowed_periods = set(period_values) | _ALLOWED_PERIODS
-    seen: dict = {}
-    for row in result_rows or []:
-        period = row.get(period_alias)
-        if period not in allowed_periods:
-            return f"period 值 {period!r} 不在允许范围 (comparison/current)"
-        if need_dimension:
-            member = row.get(dimension_alias)
-            if not isinstance(member, str) or not member.strip():
-                return f"维度成员值非法：{member!r}"
-        else:
-            member = None
-        if member in seen and period in seen[member]:
-            return f"维度成员 {member!r} 在期间 {period!r} 出现重复行"
-        seen.setdefault(member, set()).add(period)
-        for alias in metric_aliases.values():
-            value = row.get(alias)
-            if isinstance(value, bool) or not isinstance(value, (int, float)):
-                return f"指标列 {alias!r} 的值不是数字：{value!r}"
-    return None
 
 
 class Normalizer:

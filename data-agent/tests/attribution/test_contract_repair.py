@@ -453,3 +453,124 @@ def test_validate_contract_result_non_numeric_metric():
     )
     assert reason is not None
     assert "sales_amount" in reason
+
+
+# ==================== Stage 7 收口：period 交集语义 / NULL 指标语义 ====================
+# 防漂移目标：硬契约校验必须与冻结 Normalizer（_normalize_rows / _to_float）一致。
+
+
+def test_validate_contract_result_period_must_be_in_whitelist_and_values():
+    """period 必须同时满足白名单与 period_values（交集，禁止 union 放宽）。
+
+    即使契约 period_values 显式包含漂移值，只要不在冻结白名单
+    {comparison, current} 内，仍必须判非法。
+    """
+    drift_contract = dict(CONTRACT, period_values=["comparison", "current", "2025-01/2025-02"])
+    reason = validate_contract_result(
+        ["period_key", "sales_amount"],
+        [{"period_key": "2025-01/2025-02", "sales_amount": 1.0}],
+        drift_contract,
+    )
+    assert reason is not None
+    assert "comparison/current" in reason
+
+
+def test_validate_contract_result_null_metric_value_allowed():
+    """NULL 指标值合法：对应 MetricPeriodValue: float | null（与 Normalizer._to_float 一致）。"""
+    assert validate_contract_result(
+        ["period_key", "sales_amount"],
+        [
+            {"period_key": "comparison", "sales_amount": None},
+            {"period_key": "current", "sales_amount": 80009.0},
+        ],
+        CONTRACT,
+    ) is None
+
+
+def test_validate_contract_result_bool_metric_value_invalid():
+    """bool 指标值非法（int 的子类但非数值语义），不得通过。"""
+    reason = validate_contract_result(
+        ["period_key", "sales_amount"],
+        [
+            {"period_key": "comparison", "sales_amount": True},
+            {"period_key": "current", "sales_amount": 80009.0},
+        ],
+        CONTRACT,
+    )
+    assert reason is not None
+    assert "sales_amount" in reason
+
+
+def test_validate_contract_result_string_metric_value_invalid():
+    """字符串数字指标值非法：不猜测、不自动转换。"""
+    reason = validate_contract_result(
+        ["period_key", "sales_amount"],
+        [
+            {"period_key": "comparison", "sales_amount": "109030.5"},
+            {"period_key": "current", "sales_amount": 80009.0},
+        ],
+        CONTRACT,
+    )
+    assert reason is not None
+    assert "sales_amount" in reason
+
+
+# ==================== Stage 7 收口：真实默认 repair 路径 ====================
+# 不注入 contract_repair fake，不 mock _default_contract_repair 本身；
+# 仅 mock LLM（app.agent.llm.llm）使修复 SQL 确定性，验证
+#   execute → contract violation → _default_contract_repair（真实）
+#   → LLM → validate_sql → execute_query → contract revalidate → success
+# 且全流程只 repair 一次。
+
+
+def test_default_repair_path_without_injected_contract_repair():
+    async def fake_ainvoke(state, **kwargs):
+        # 漂移输出：缺 period_key 契约列 → 必然触发硬契约校验失败
+        return {
+            **state,
+            "sql": "SELECT 1",
+            "result_columns": ["sales_amount"],
+            "result_rows": [{"sales_amount": 100.0}, {"sales_amount": 200.0}],
+        }
+
+    service = _make_service()
+    service.dw_mysql_repo.validate_sql = AsyncMock()
+    service.dw_mysql_repo.execute_query = AsyncMock(return_value=(REPAIRED_COLS, REPAIRED_ROWS))
+
+    captured = {}
+
+    # 真实 _default_contract_repair 使用的 mock LLM（RunnableLambda 替换模型，
+    # 不替换修复函数本身），使修复 SQL 确定性。
+    from langchain_core.runnables import RunnableLambda
+
+    def _fake_llm_fn(prompt):
+        # 模型收到的输入是 StringPromptValue，统一转文本后捕获
+        captured["prompt"] = prompt.to_string() if hasattr(prompt, "to_string") else str(prompt)
+        return REPAIRED_SQL
+
+    with patch("app.services.query_service.graph") as g, \
+            patch("app.agent.llm.llm", RunnableLambda(_fake_llm_fn)):
+        g.ainvoke = fake_ainvoke
+        # 不传 contract_repair → 走真实 _default_contract_repair
+        result = asyncio.run(service.execute("q", CONTRACT))
+
+    # 修复后契约合规 → success，最终 SQL 为修复 SQL
+    assert result.status == ObservationStatus.success
+    assert result.sql == REPAIRED_SQL
+    assert result.table.columns == REPAIRED_COLS
+
+    # 全流程只 repair 一次（validate + execute 各只被调用一次，无重试）
+    assert service.dw_mysql_repo.validate_sql.call_count == 1
+    assert service.dw_mysql_repo.execute_query.call_count == 1
+
+    # 原 query / 原 SQL / result_contract / violation reason 均被传入 LLM prompt
+    prompt = captured["prompt"]
+    assert "q" in prompt                      # 原 query
+    assert "SELECT 1" in prompt               # 原（错误）SQL
+    assert "period_key" in prompt             # result_contract
+    assert "sales_amount" in prompt           # result_contract metric alias
+    assert "结果缺少契约列" in prompt         # violation reason
+
+    # LLM 输出的 SQL 最终进入 repository validate / execute
+    assert service.dw_mysql_repo.validate_sql.call_args[0][0] == REPAIRED_SQL
+    assert service.dw_mysql_repo.execute_query.call_args[0][0] == REPAIRED_SQL
