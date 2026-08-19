@@ -136,9 +136,9 @@
             </span>
           </div>
 
-          <!-- 追溯：observation_ids -> queryResults -> SQL / QueryTable -->
+          <!-- 追溯：每个 observation_id 独立判断，存在则展示 SQL/QueryTable，缺失则提示不可用 -->
           <div class="rp-trace">
-            <template v-if="hasTrace(e.observation_ids)">
+            <template v-if="(e.observation_ids || []).length">
               <div
                 v-for="obsId in e.observation_ids"
                 :key="obsId"
@@ -154,15 +154,18 @@
                     {{ queryStatusText(queryResultMap[obsId].status) }}
                   </span>
                 </div>
-                <details v-if="queryResultMap[obsId]" class="rp-trace-sql">
-                  <summary>查看 SQL</summary>
-                  <pre>{{ queryResultMap[obsId].sql || "（无可用 SQL）" }}</pre>
-                </details>
-                <ResultTable
-                  v-if="queryResultMap[obsId] && queryResultMap[obsId].table && queryResultMap[obsId].table.columns.length"
-                  :columns="queryResultMap[obsId].table.columns"
-                  :rows="queryResultMap[obsId].table.rows"
-                />
+                <template v-if="queryResultMap[obsId]">
+                  <details class="rp-trace-sql">
+                    <summary>查看 SQL</summary>
+                    <pre>{{ queryResultMap[obsId].sql || "（无可用 SQL）" }}</pre>
+                  </details>
+                  <ResultTable
+                    v-if="queryResultMap[obsId].table && queryResultMap[obsId].table.columns.length"
+                    :columns="queryResultMap[obsId].table.columns"
+                    :rows="queryResultMap[obsId].table.rows"
+                  />
+                </template>
+                <div v-else class="rp-trace-unavail">查询明细不可用</div>
               </div>
             </template>
             <div v-else class="rp-trace-unavail">查询明细不可用</div>
@@ -266,11 +269,6 @@ const queryResultMap = computed(() => {
   return map;
 });
 
-function hasTrace(observationIds) {
-  if (!observationIds || !observationIds.length) return false;
-  return observationIds.some((id) => queryResultMap.value[id]);
-}
-
 // ===================== 报告复制 =====================
 const copyState = ref("");
 
@@ -322,19 +320,7 @@ function buildReportText() {
   }
   lines.push("");
 
-  lines.push("六、数据边界");
-  for (const b of r.data_boundaries || []) {
-    lines.push(`- ${b}`);
-  }
-  lines.push("");
-
-  lines.push("七、建议");
-  for (const rec of r.recommendations || []) {
-    lines.push(`- ${rec.text}（依据：${eviIdsText(rec.evidence_ids)}）`);
-  }
-  lines.push("");
-
-  lines.push("八、证据明细");
+  lines.push("六、证据明细");
   for (const e of props.evidences || []) {
     lines.push(
       `[${e.evidence_id}] ${e.title}：${e.statement}` +
@@ -346,6 +332,19 @@ function buildReportText() {
         `${e.calculation_ids && e.calculation_ids.length ? "；计算 " + e.calculation_ids.join(", ") : ""}）`
     );
   }
+  lines.push("");
+
+  lines.push("七、数据边界与建议");
+  lines.push("数据边界：");
+  for (const b of r.data_boundaries || []) {
+    lines.push(`- ${b}`);
+  }
+  lines.push("");
+  lines.push("建议：");
+  for (const rec of r.recommendations || []) {
+    lines.push(`- ${rec.text}（依据：${eviIdsText(rec.evidence_ids)}）`);
+  }
+  lines.push("");
 
   return lines.join("\n");
 }
